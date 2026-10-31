@@ -22,7 +22,15 @@ export function renderMic(app) {
   const a = /** @type {any} */ (app);
   const meter = h('div', { class: 'meter', role: 'meter', 'aria-label': 'Mic level', 'aria-valuemin': '-80', 'aria-valuemax': '0' },
     h('div', { class: 'meter-fill' }), h('span', { class: 'meter-text' }, app.recorder ? '' : 'No mic open'));
-  startMeter(app, meter);
+  const silence = h('div', { class: 'notice notice-warn', hidden: true },
+    h('span', { class: 'notice-text' },
+      'The browser is getting digital silence from this mic: not quiet, but exactly zero, so the sound never reaches the page. Usual causes:\n',
+      '• Windows: Settings > Privacy & security > Microphone: turn on "Let desktop apps access your microphone" (and "Let apps access" for the browser).\n',
+      '• Windows Sound settings: the input is muted or at 0, or another app holds it in exclusive mode (close REW or DAW software, or untick "Allow applications to take exclusive control").\n',
+      '• An audio interface: the mic\'s input channel is off, or phantom power is off for a condenser mic.\n',
+      '• The wrong input: pick another from the list. Then press "Reopen mic".'));
+  const info = h('p', { class: 'help mic-info' });
+  startMeter(app, meter, silence, info);
 
   const devices = a.micDevices ?? [];
   const openSelected = (/** @type {string} */ id) => app.run('Opening the microphone', async () => {
@@ -30,6 +38,7 @@ export function renderMic(app) {
     app.recorder = null;
     const stream = await openMic(id || undefined);
     const applied = appliedSettings(stream);
+    a.micInfo = { label: stream.getAudioTracks()[0]?.label ?? '', sampleRate: applied.sampleRate };
     app.recorder = await createRecorder(stream);
     app.settings.micDeviceId = id;
     a.micDevices = await listMics();
@@ -115,6 +124,8 @@ export function renderMic(app) {
         : null,
       h('button', { onclick: () => openSelected(app.settings.micDeviceId), disabled: !support.ok || !!app.busy || app.demo }, app.recorder ? 'Reopen mic' : 'Use microphone')),
     meter,
+    info,
+    silence,
     h('p', { class: 'help' }, 'Speak or tap the mic: the bar should move. If it does not, pick another input.'),
     a.micWarning ? h('p', { class: 'notice notice-warn' }, a.micWarning) : null,
     field('Mic profile', micProfiles, micProfile?.notes),
@@ -138,23 +149,31 @@ export function renderMic(app) {
     h('div', { class: 'row' },
       field('Mic positions for the PEQ fit', positions, 'Averaged; 3 is a good start.'),
       field('Mic positions for A/B checks', checkPositions, 'Polarity, crossover and delay tests compare settings at one spot.')),
-  ], !app.recorder && !app.demo);
+  ], !app.demo); // stays open: the level meter is what you watch while picking the mic
 }
 
-/** Live level bar, updated every frame while the section is on the page. @param {import('./app.js').TunerApp} app @param {HTMLElement} meter */
-function startMeter(app, meter) {
+/**
+ * Live level bar, updated every frame while the section is on the page, with the
+ * digital-silence warning and what the browser actually opened.
+ * @param {import('./app.js').TunerApp} app @param {HTMLElement} meter @param {HTMLElement} silence @param {HTMLElement} info
+ */
+function startMeter(app, meter, silence, info) {
   const fill = /** @type {HTMLElement} */ (meter.querySelector('.meter-fill'));
   const text = /** @type {HTMLElement} */ (meter.querySelector('.meter-text'));
   const tick = () => {
     if (!meter.isConnected && meter.dataset.started) return;
     meter.dataset.started = '1';
     if (app.recorder) {
-      const { rmsDbfs, peakDbfs } = app.recorder.level();
-      const pct = Math.max(0, Math.min(100, ((rmsDbfs + 80) / 80) * 100));
+      const { rmsDbfs, peakDbfs, silent } = app.recorder.level();
+      const pct = silent ? 0 : Math.max(0, Math.min(100, ((rmsDbfs + 80) / 80) * 100));
       fill.style.width = `${pct}%`;
       fill.classList.toggle('hot', peakDbfs > -3);
-      text.textContent = `${rmsDbfs.toFixed(0)} dBFS${peakDbfs > -3 ? ' · near clipping' : ''}`;
-      meter.setAttribute('aria-valuenow', String(Math.round(rmsDbfs)));
+      text.textContent = silent ? 'No signal: digital silence' : `${Math.max(rmsDbfs, -120).toFixed(0)} dBFS${peakDbfs > -3 ? ' · near clipping' : ''}`;
+      meter.setAttribute('aria-valuenow', String(Math.round(Math.max(rmsDbfs, -120))));
+      silence.hidden = !silent;
+      const mi = /** @type {any} */ (app).micInfo;
+      const ch = app.recorder.channels();
+      info.textContent = mi ? `Open: ${mi.label || 'microphone'} · ${ch || '?'} channel${ch === 1 ? '' : 's'}${ch > 1 ? ' (mixed)' : ''} · ${app.recorder.sampleRate} Hz` : '';
     }
     requestAnimationFrame(tick);
   };
