@@ -1,0 +1,11 @@
+# real config with your HA URL and token, never commit it
+config.json
+custom_components/speaker_tuner/frontend/config.json
+node_modules/
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+*.wav
+!test/fixtures/*.wav
+.DS_Store

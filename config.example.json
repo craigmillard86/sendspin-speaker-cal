@@ -1,0 +1,5 @@
+{
+  "_comment": "Only for the standalone page. Copy to custom_components/speaker_tuner/frontend/config.json (gitignored). The HA sidebar panel needs no config.",
+  "ha_url": "https://homeassistant.example:8123",
+  "token": "PASTE-A-LONG-LIVED-ACCESS-TOKEN-HERE"
+}
