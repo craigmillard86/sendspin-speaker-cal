@@ -90,6 +90,8 @@ export class TunerApp {
     this.sections = {};
     /** @type {any} */
     this._settingsTimer = 0;
+    /** loudness was switched off for measuring and goes back on when the task ends */
+    this.restoreLoudness = false;
     /** @type {Record<string, (app: TunerApp) => HTMLElement>} */
     this.renderers = {
       connect: renderConnect, speaker: renderSpeaker, mic: renderMic, measure: renderMeasure,
@@ -132,11 +134,33 @@ export class TunerApp {
 
   /** Called once the HA connection is up. */
   async connected() {
-    this.api?.onClose(() => {
+    const api = this.api;
+    api?.onClose(() => {
+      if (this.api !== api) return;
       this.notify('The connection to Home Assistant was lost. Anything in progress stopped; reconnect and check the settings.', 'error');
       this.abort?.abort('disconnected');
     });
+    api?.onReconnect(() => {
+      if (this.api === api) this.writer?.reload().then(() => this.checkMutes()).catch(() => {});
+    });
     if (this.mapping) await this.useMapping(this.mapping.id);
+  }
+
+  /**
+   * A driver mute left on by an interrupted measurement (page closed, phone locked,
+   * connection lost) would silence the speaker until it reboots: say so and offer to fix it.
+   */
+  checkMutes() {
+    const w = this.writer;
+    if (!w || this.busy) return;
+    const on = ['tweeter_mute', 'mid_mute'].filter((r) => w.value(r) === true);
+    if (!on.length) return;
+    const fix = h('button', { onclick: async () => {
+      const r = await w.write({ tweeter_mute: false, mid_mute: false });
+      this.notify(r.ok ? 'Both drivers unmuted.' : `Could not unmute: ${r.failed[0]?.error ?? 'stopped'}`, r.ok ? 'ok' : 'error');
+      notice?.remove();
+    } }, 'Unmute both drivers');
+    const notice = this.notify(`${on.map((r) => (r === 'tweeter_mute' ? 'The tweeter' : 'The mid/bass')).join(' and ')} ${on.length > 1 ? 'are' : 'is'} muted. A measurement may have been interrupted.`, 'warn', fix);
   }
 
   /** Demo: an in-memory HA with a simulated speaker. */
@@ -217,9 +241,10 @@ export class TunerApp {
     const profile = this.profile;
     if (!m || !profile || !this.api) return;
     this.writer = new DspWriter(this.api, profile, m.entities);
+    this.writer.onChange = () => this.scheduleSettingsRefresh();
     await this.writer.start();
-    this.writer.api.subscribeStateChanged(() => this.scheduleSettingsRefresh());
     this.persist();
+    this.checkMutes();
   }
 
   scheduleSettingsRefresh() {
@@ -271,27 +296,33 @@ export class TunerApp {
 
   /**
    * Measure with the session's settled volume, loudness off and tuning mode on.
+   * Loudness is switched back on when the whole task ends (see run()), not after every
+   * measurement, so a 30-measurement scan doesn't toggle it 60 times.
    * @param {Omit<import('../measure/session.js').MeasureRequest, 'signal'>} req @param {AbortSignal} signal
+   * @param {{ keepVolume?: boolean }} [o] keepVolume: measure at whatever volume is set now (nearfield)
    */
-  async measure(req, signal) {
+  async measure(req, signal, { keepVolume = false } = {}) {
     const session = await this.ensureSession();
     const measurer = this.measurer();
     const writer = /** @type {DspWriter} */ (this.writer);
+    /** @type {Record<string, any>} */
     const prep = {};
-    if (this.has('tuning_mode')) Object.assign(prep, { tuning_mode: true });
-    if (this.has('loudness') && writer.value('loudness')) Object.assign(prep, { loudness: false });
-    const loudnessWas = writer.value('loudness');
-    await writer.write(prep);
-    try {
-      if (session.levelVolume !== null && (await measurer.getVolume()) !== session.levelVolume) await measurer.setVolume(session.levelVolume);
-      const rec = await measurer.measure({ ...req, signal, onPrompt: (i, n) => this.promptPosition(i, n), onStatus: (t) => this.status(t) });
-      rec.relevelled = !!session.relevelled;
-      rec.settings = writer.snapshot(settingRoles(/** @type {any} */ (this.profile)));
-      if (rec.clipped) this.notify('The mic clipped during that measurement. Turn the mic gain down and level again.', 'warn');
-      return rec;
-    } finally {
-      if (loudnessWas === true && this.has('loudness')) await writer.write({ loudness: true });
+    if (this.has('tuning_mode')) prep.tuning_mode = true;
+    if (this.has('loudness') && writer.value('loudness') === true) {
+      prep.loudness = false;
+      this.restoreLoudness = true;
     }
+    const r = await writer.write(prep, { signal });
+    if (!r.ok) {
+      if (r.stopped) throw Object.assign(new Error('Stopped'), { name: 'AbortError' });
+      throw new Error(`Could not prepare the speaker for measuring (${r.failed[0]?.role}: ${r.failed[0]?.error}).`);
+    }
+    if (!keepVolume && session.levelVolume !== null && (await measurer.getVolume()) !== session.levelVolume) await measurer.setVolume(session.levelVolume);
+    const rec = await measurer.measure({ ...req, signal, onPrompt: (i, n) => this.promptPosition(i, n, signal), onStatus: (t) => this.status(t) });
+    rec.relevelled = !!session.relevelled;
+    rec.settings = writer.snapshot(settingRoles(/** @type {any} */ (this.profile)));
+    if (rec.clipped) this.notify('The mic clipped during that measurement. Turn the mic gain down and level again.', 'warn');
+    return rec;
   }
 
   /** @param {import('../measure/record.js').MeasurementRecord} rec */
@@ -324,13 +355,20 @@ export class TunerApp {
     } catch (e) {
       const err = /** @type {any} */ (e);
       const reason = this.abort?.signal.reason;
-      if (err?.name === 'AbortError' || err?.message === 'Stopped' || this.abort?.signal.aborted) {
+      // only a real abort is reported as "Stopped": an error raised while stopping (say a
+      // setting that could not be put back) must still be shown
+      if (err?.name === 'AbortError' || err?.message === 'Stopped') {
         if (reason !== 'disconnected') this.notify(abortMessage(reason), reason === 'hidden' ? 'warn' : 'info');
       } else {
         this.notify(err?.message ?? String(err), 'error');
         console.error(err);
       }
     } finally {
+      if (this.restoreLoudness && this.writer) {
+        this.restoreLoudness = false;
+        const r = await this.writer.write({ loudness: true }).catch((/** @type {Error} */ e) => ({ ok: false, failed: [{ error: e.message }] }));
+        if (!r.ok) this.notify(`Loudness was switched off for measuring and could not be switched back on: ${r.failed[0]?.error ?? 'stopped'}. Turn it on in Speaker settings.`, 'error');
+      }
       this.busy = '';
       this.abort = null;
       this.status('');
@@ -346,25 +384,41 @@ export class TunerApp {
     bar.querySelector('.status-text').textContent = text || this.busy;
   }
 
-  /** @param {string} text @param {'info' | 'warn' | 'error' | 'ok'} [kind] */
-  notify(text, kind = 'info') {
+  /**
+   * @param {string} text @param {'info' | 'warn' | 'error' | 'ok'} [kind] @param {HTMLElement} [action] a button to show
+   * @returns {HTMLElement | undefined}
+   */
+  notify(text, kind = 'info', action) {
     const list = this.el?.notices;
-    if (!list) return;
+    if (!list) return undefined;
     const n = h('div', { class: `notice notice-${kind}`, role: kind === 'error' ? 'alert' : 'status' },
       h('span', { class: 'notice-icon', 'aria-hidden': 'true' }, { info: 'i', warn: '!', error: '×', ok: '✓' }[kind]),
       h('span', { class: 'notice-text' }, text),
+      action ?? null,
       h('button', { class: 'link', onclick: () => n.remove(), 'aria-label': 'Dismiss' }, 'Dismiss'));
     list.append(n);
-    if (kind === 'ok' || kind === 'info') setTimeout(() => n.remove(), 12000);
+    if ((kind === 'ok' || kind === 'info') && !action) setTimeout(() => n.remove(), 12000);
+    return n;
   }
 
   /**
    * Modal with Continue / Stop. Resolves on Continue, rejects on Stop.
    * @param {string} title @param {string} text @param {string} [ok]
    */
-  confirm(title, text, ok = 'Continue') {
+  confirm(title, text, ok = 'Continue', signal = this.abort?.signal) {
     return new Promise((resolve, reject) => {
-      const close = () => dialog.remove();
+      const stopped = () => Object.assign(new Error('Stopped'), { name: 'AbortError' });
+      if (signal?.aborted) return reject(stopped());
+      // Stop (or the page being hidden) closes the dialog and ends the task
+      const onAbort = () => {
+        dialog.remove();
+        reject(stopped());
+      };
+      signal?.addEventListener('abort', onAbort, { once: true });
+      const close = () => {
+        signal?.removeEventListener('abort', onAbort);
+        dialog.remove();
+      };
       const dialog = h('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true' },
         h('div', { class: 'modal-box' },
           h('h3', null, title), h('p', null, text),
@@ -376,12 +430,12 @@ export class TunerApp {
     });
   }
 
-  /** @param {number} i @param {number} n */
-  promptPosition(i, n) {
+  /** @param {number} i @param {number} n @param {AbortSignal} [signal] */
+  promptPosition(i, n, signal) {
     const where = i === 0
       ? 'Put the mic at your main listening position, at ear height, pointing at the ceiling (or at the speaker for a 0° cal file).'
       : 'Move the mic 30 to 50 cm to a new spot around the listening position (left, right, forward or back), same height.';
-    return /** @type {Promise<void>} */ (this.confirm(`Mic position ${i + 1} of ${n}`, where, 'Measure'));
+    return /** @type {Promise<void>} */ (this.confirm(`Mic position ${i + 1} of ${n}`, where, 'Measure', signal));
   }
 
   // ---------- chart ----------

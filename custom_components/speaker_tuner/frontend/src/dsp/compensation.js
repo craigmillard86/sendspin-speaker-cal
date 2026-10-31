@@ -72,11 +72,13 @@ export function baffleStepHz(widthCm) {
  * sits below the upper plateau (1..2 kHz) by up to 6 dB; the step frequency is where the
  * curve crosses half way. Null if the difference is under 2 dB.
  * Returns the suggested width clamped to the fork's 5..50 cm.
- * @param {ArrayLike<number>} freqs @param {ArrayLike<number>} db
+ * @param {ArrayLike<number>} freqs @param {ArrayLike<number>} db @param {{ crossoverHz?: number }} [o]
  */
-export function suggestBaffleWidth(freqs, db) {
+export function suggestBaffleWidth(freqs, db, { crossoverHz = Infinity } = {}) {
+  // the upper plateau has to stay clear of a mid-alone curve's own crossover roll-off
+  const highTop = Math.min(2000, crossoverHz / 1.5);
   const low = meanDb(freqs, db, 150, 300);
-  const high = meanDb(freqs, db, 1000, 2000);
+  const high = meanDb(freqs, db, highTop / 2, highTop);
   if (!(high - low >= 2)) return null;
   const half = (low + high) / 2;
   for (const i of indicesInRange(freqs, 200, 1500)) {

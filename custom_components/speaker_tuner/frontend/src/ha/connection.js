@@ -8,6 +8,7 @@
  *   send: (msg: Record<string, any>) => Promise<any>,
  *   subscribe: (msg: Record<string, any>, onEvent: (event: any) => void) => Promise<() => Promise<void> | void>,
  *   onClose?: (cb: () => void) => void,
+ *   onReconnect?: (cb: () => void) => void,
  *   close?: () => void,
  *   http?: { baseUrl: string, token: () => string | Promise<string> },
  * }} Transport
@@ -52,6 +53,11 @@ export class HaApi {
   onClose(cb) {
     this.transport.onClose?.(cb);
   }
+
+  /** @param {() => void} cb */
+  onReconnect(cb) {
+    this.transport.onReconnect?.(cb);
+  }
 }
 
 /**
@@ -64,6 +70,8 @@ export function transportFromHass(hass) {
     send: (msg) => hass.connection.sendMessagePromise(msg),
     subscribe: (msg, cb) => hass.connection.subscribeMessage(cb, msg),
     onClose: (cb) => hass.connection.addEventListener('disconnected', cb),
+    // HA's frontend reconnects by itself; states that changed in the gap have to be re-read
+    onReconnect: (cb) => hass.connection.addEventListener('ready', cb),
     http: {
       baseUrl: typeof hass.hassUrl === 'function' ? hass.hassUrl('').replace(/\/$/, '') : '',
       token: async () => {

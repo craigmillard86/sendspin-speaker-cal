@@ -15,11 +15,17 @@ const NOISE_FILE_S = 20;
 /** @param {number} ms @param {AbortSignal} [signal] */
 export function sleep(ms, signal) {
   return new Promise((resolve, reject) => {
-    const t = setTimeout(resolve, ms);
-    signal?.addEventListener('abort', () => {
+    // an abort that already happened (e.g. Stop pressed during an HA call) must still count
+    if (signal?.aborted) return reject(new DOMException('Aborted', 'AbortError'));
+    const onAbort = () => {
       clearTimeout(t);
       reject(new DOMException('Aborted', 'AbortError'));
-    }, { once: true });
+    };
+    const t = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve(undefined);
+    }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
   });
 }
 

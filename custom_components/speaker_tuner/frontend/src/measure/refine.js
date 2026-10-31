@@ -6,7 +6,8 @@
 
 /**
  * @typedef {{ iteration: number, changes: Record<string, any>, report: import('../ha/dsp-writer.js').WriteReport,
- *   curve: { freqs: number[], db: number[] } | null, rms: number | null, predictedRms: number, undone?: boolean }} RefineStep
+ *   curve: { freqs: number[], db: number[] } | null, rms: number | null, predictedRms: number, undone?: boolean,
+ *   undoReport?: import('../ha/dsp-writer.js').WriteReport, undoValues?: Record<string, any> }} RefineStep
  */
 
 /**
@@ -49,8 +50,11 @@ export async function applyAndRefine({ writer, baseline, plan, measure, rmsOf, m
     const improvement = rms - step.rms;
     if (improvement < 0) {
       onStatus?.(`Pass ${iteration} made it worse: putting the previous values back`);
-      const undo = await writer.write(previous, { signal });
+      // not aborted: putting the better values back must happen even after Stop
+      const undo = await writer.write(previous);
       step.undone = undo.ok;
+      step.undoReport = undo;
+      step.undoValues = previous;
       reason = undo.ok ? `pass ${iteration} made it worse and was undone` : `pass ${iteration} made it worse and could not be undone`;
       break;
     }

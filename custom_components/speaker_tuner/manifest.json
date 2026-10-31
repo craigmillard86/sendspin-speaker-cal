@@ -1,9 +1,16 @@
 {
   "domain": "speaker_tuner",
   "name": "Speaker Tuner",
-  "codeowners": ["@craigmillard86"],
+  "codeowners": [
+    "@craigmillard86"
+  ],
   "config_flow": true,
-  "dependencies": ["http", "frontend", "panel_custom"],
+  "dependencies": [
+    "frontend",
+    "http",
+    "media_source",
+    "panel_custom"
+  ],
   "documentation": "https://github.com/craigmillard86/sendspin-speaker-cal",
   "integration_type": "service",
   "iot_class": "calculated",

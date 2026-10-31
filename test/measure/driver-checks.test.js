@@ -111,3 +111,26 @@ test('notch and air are only offered with a calibrated mic, and find the breakup
   assert.ok(Math.abs(r.air) <= 3, `air ${r.air} dB`);
   assert.equal(noNotch.air, r.air);
 });
+
+test('air shelf suggestion is an absolute setting: the same with or without a shelf already set', async () => {
+  const { writer, ctx } = await rig();
+  const t0 = await measureDriver(ctx, 'tweeter', 't');
+  const f0 = await measureDriver(ctx, 'full', 'f');
+  const first = notchAndAir(t0.curve, f0.curve, FLAT, 'calibrated');
+  await writer.write({ air_gain: first.air, tweeter_notch_frequency: first.notch.frequency, tweeter_notch_gain: first.notch.gainDb, tweeter_notch_q: first.notch.q });
+  const t1 = await measureDriver(ctx, 'tweeter', 't');
+  const f1 = await measureDriver(ctx, 'full', 'f');
+  const current = { air_gain: writer.value('air_gain'), tweeter_notch_frequency: writer.value('tweeter_notch_frequency'), tweeter_notch_gain: writer.value('tweeter_notch_gain'), tweeter_notch_q: writer.value('tweeter_notch_q') };
+  const again = notchAndAir(t1.curve, f1.curve, FLAT, 'calibrated', 96000, current);
+  assert.ok(Math.abs(again.air - first.air) <= 0.5, `air ${first.air} then ${again.air}`);
+  assert.ok(again.notch && Math.abs(again.notch.gainDb - first.notch.gainDb) <= 1, 'the breakup peak is still found under its own notch');
+});
+
+test('Stop pressed before a wait still stops it', async () => {
+  const { sleep } = await import('../../custom_components/speaker_tuner/frontend/src/measure/session.js');
+  const c = new AbortController();
+  c.abort();
+  const t = Date.now();
+  await assert.rejects(sleep(300, c.signal), /Abort/);
+  assert.ok(Date.now() - t < 50);
+});

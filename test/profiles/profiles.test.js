@@ -86,7 +86,7 @@ test('template errors name the missing placeholders', () => {
 
 test('Louder YAML export uses the fork keys and units', () => {
   const values = {
-    crossover_frequency: 2800, crossover_filter: 'LR4 24dB/oct', tweeter_gain: -4.5, tweeter_invert: true,
+    crossover_frequency: 2800, crossover_filter: 'LR4 24dB/oct', crossover_tweeter_channel: 'Left', tweeter_gain: -4.5, tweeter_invert: true,
     mid_peq_1_frequency: 120, mid_peq_1_gain: -5, mid_peq_1_q: 4, mid_peq_1_type: 'Peaking',
     baffle_placement: 'Near Wall', subsonic_frequency: 34,
   };
@@ -105,7 +105,8 @@ test('Louder YAML export uses the fork keys and units', () => {
 });
 
 test('export flags values the fork YAML would reject', () => {
-  const { problems } = exportYaml(louder, { subsonic_frequency: 5, linkwitz_f0: 50, linkwitz_fp: 0, baffle_width: 3 }, { tweeterMinFrequency: 1800 });
+  const known = { crossover_frequency: 2500, crossover_filter: 'LR4 24dB/oct', crossover_tweeter_channel: 'Left' };
+  const { problems } = exportYaml(louder, { ...known, subsonic_frequency: 5, linkwitz_f0: 50, linkwitz_fp: 0, baffle_width: 3 }, { tweeterMinFrequency: 1800 });
   assert.equal(problems.length, 3);
   assert.ok(problems.some((p) => /Subsonic/.test(p)));
   assert.ok(problems.some((p) => /Linkwitz/.test(p)));
@@ -143,4 +144,13 @@ test('version is the same in package.json, manifest.json and the app', async () 
   const manifest = JSON.parse(readFileSync(new URL('../../custom_components/speaker_tuner/manifest.json', import.meta.url), 'utf8'));
   assert.equal(pkg.version, VERSION);
   assert.equal(manifest.version, VERSION);
+});
+
+test('export warns instead of silently defaulting safety-critical values', () => {
+  const offline = exportYaml(louder, {}, {});
+  assert.ok(offline.problems.some((p) => /not reporting any values/.test(p)));
+  const noChannel = exportYaml(louder, { crossover_frequency: 2500, crossover_filter: 'LR4 24dB/oct' }, { tweeterMinFrequency: 1800 });
+  assert.deepEqual(noChannel.problems.map((p) => p.split(' ')[0]), ['crossover_tweeter_channel']);
+  const noMin = exportYaml(louder, { crossover_frequency: 2500, crossover_filter: 'LR4 24dB/oct', crossover_tweeter_channel: 'Left' }, {});
+  assert.ok(noMin.problems.some((p) => /tweeter minimum frequency is unknown/.test(p)));
 });

@@ -87,6 +87,9 @@ export function planPeqFit({ profile, values, rangeOf, curve, target, mic, boost
   const raw = measured.db.map((d, i) => d - current[i]);
   const tgt = targetCurve(target, freqs);
   const rules = micRules(mic);
+  // boosts stay out of the bottom half octave of the fit range even when no tuning frequency
+  // or subsonic is known: that is where drivers run out of excursion
+  const floor = effectiveBoostFloor(boostFloorHz, rules.fMin);
   const fitMask = mask ? resampleMask(curve.freqs, mask, freqs) : undefined;
   const crossoverHz = Number(values.crossover_frequency ?? profile.defaults?.crossover_frequency ?? 2500);
 
@@ -103,7 +106,7 @@ export function planPeqFit({ profile, values, rangeOf, curve, target, mic, boost
     const role = (/** @type {string} */ f) => `${first.role_prefix}1_${f}`;
     const { banks, exclude } = fitBanks(profile, crossoverHz);
     peqResult = fitPeq({
-      freqs, measuredDb: raw, targetDb: tgt, fs, rules, banks, exclude, boostFloorHz, mask: fitMask,
+      freqs, measuredDb: raw, targetDb: tgt, fs, rules, banks, exclude, boostFloorHz: floor, mask: fitMask,
       ranges: { frequency: rangeOf(role('frequency')), gain: rangeOf(role('gain')), q: rangeOf(role('q')) },
     });
     for (const b of parametric) Object.assign(changes, bankValues(profile, b.id, peqResult.filters.filter((f) => f.bank === b.id)));
@@ -114,7 +117,7 @@ export function planPeqFit({ profile, values, rangeOf, curve, target, mic, boost
     const bands = (bank.frequencies ?? []).map((f, i) => ({ f, q: bank.q?.[i] ?? 1, gain: rangeOf(`${bank.role_prefix}${i + 1}_gain`) }));
     // graphic banks fit what the parametric banks left over
     const residual = Float64Array.from(predicted);
-    const g = fitGraphic({ freqs, measuredDb: residual, targetDb: tgt, fs, rules, bands, boostFloorHz, mask: fitMask });
+    const g = fitGraphic({ freqs, measuredDb: residual, targetDb: tgt, fs, rules, bands, boostFloorHz: floor, mask: fitMask });
     g.gains.forEach((gain, i) => (changes[`${bank.role_prefix}${i + 1}_gain`] = gain));
     for (let i = 0; i < predicted.length; i++) predicted[i] += g.filterDb[i];
   }
@@ -133,7 +136,17 @@ export function planPeqFit({ profile, values, rangeOf, curve, target, mic, boost
     rmsBefore,
     rmsAfter: rmsDeviation(freqs, predicted, tgt, rules.fMin, rules.fMax, fitMask),
     rules,
+    boostFloorHz: floor,
   };
+}
+
+/**
+ * Lowest frequency a boost may sit at: the known floor (1.3 x fb or subsonic), but never
+ * inside the bottom half octave of the fit range.
+ * @param {number} known @param {number} fMin
+ */
+export function effectiveBoostFloor(known, fMin) {
+  return Math.max(known || 0, fMin * Math.SQRT2);
 }
 
 /**

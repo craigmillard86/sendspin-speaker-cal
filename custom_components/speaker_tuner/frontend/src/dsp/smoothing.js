@@ -78,8 +78,10 @@ export function smoothPowerDb(freqs, power, fraction, grid) {
   };
   for (let i = 0; i < grid.length; i++) {
     const fc = grid[i];
-    const a = lowerBound(fc / half);
-    const b = lowerBound(fc * half); // exclusive
+    // half-open band [lo, hi): a tiny shift makes bins that sit exactly on an edge (as the
+    // 1/48-octave store grid does) fall the same way every time
+    const a = lowerBound((fc / half) * (1 - 1e-9));
+    const b = lowerBound((fc * half) * (1 - 1e-9));
     let p;
     if (b - a >= 2) {
       p = (prefix[b] - prefix[a]) / (b - a);

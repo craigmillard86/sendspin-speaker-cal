@@ -9,7 +9,7 @@ import { fitSealedRolloff, f3Of, findTuningFrequency, suggestSubsonic } from '..
 import { detectBreakupPeak, suggestAirGain, suggestBaffleWidth } from '../dsp/compensation.js';
 import { targetDb } from '../dsp/target.js';
 import { fitToRange } from '../ha/entities.js';
-import { peaking, magnitudeDb } from '../dsp/biquad.js';
+import { peaking, highShelf, magnitudeDb } from '../dsp/biquad.js';
 
 /** A change must make the crossover region at least this much flatter to be suggested. */
 export const MIN_FLATNESS_GAIN_DB = 0.2;
@@ -33,15 +33,24 @@ async function withValues(ctx, temporary, fn) {
   const before = ctx.writer.snapshot(Object.keys(temporary));
   const report = await ctx.writer.write(temporary, { signal: ctx.signal });
   if (!report.ok) {
-    await ctx.writer.write(before);
-    throw new Error(`Could not set ${report.failed[0]?.role ?? 'a setting'} for the test: ${report.failed[0]?.error ?? 'stopped'}`);
+    const cleanup = await ctx.writer.write(before);
+    const why = `${report.failed[0]?.role ?? 'a setting'}: ${report.failed[0]?.error ?? 'stopped'}`;
+    if (!cleanup.ok) throw new Error(`Could not set ${why}, and could not put ${leftOver(cleanup)} back either. Use Revert, which also unmutes both drivers.`);
+    if (report.stopped) throw Object.assign(new Error('Stopped'), { name: 'AbortError' });
+    throw new Error(`Could not set ${why}`);
   }
   try {
     return await fn();
   } finally {
+    // never aborted: the speaker must get its values back even after Stop
     const back = await ctx.writer.write(before);
-    if (!back.ok) throw new Error(`Could not put ${back.failed[0]?.role} back after the test. Use Revert.`);
+    if (!back.ok) throw new Error(`Could not put ${leftOver(back)} back after the test. Use Revert, which also unmutes both drivers.`);
   }
+}
+
+/** Roles a failed restore left behind, for the error message. @param {import('../ha/dsp-writer.js').WriteReport} r */
+function leftOver(r) {
+  return [...r.failed.map((f) => f.role), ...r.remaining].join(', ') || 'a setting';
 }
 
 /**
@@ -132,7 +141,8 @@ export async function crossoverScan(ctx, frequencies, filters) {
   const currentFrequency = crossoverHz(ctx);
   const currentFilter = ctx.writer.value('crossover_filter');
   const list = [...new Set([currentFrequency, ...frequencies.filter((f) => f >= range.min && f <= range.max).map((f) => fitToRange(f, range))])];
-  const types = filters?.length ? filters : [currentFilter];
+  // the current filter type is always tried, so there is something to compare against
+  const types = filters?.length ? [...new Set([currentFilter, ...filters])] : [currentFilter];
   const results = [];
   for (const filter of types) {
     for (const f of list) {
@@ -171,6 +181,9 @@ export const delayValues = (mm) => ({ tweeter_delay: Math.max(0, mm), mid_delay:
  * @param {Ctx} ctx @param {{ max?: number, coarse?: number, fine?: number }} [o]
  */
 export async function delayScan(ctx, { max = 50, coarse = 5, fine = 1 } = {}) {
+  // never scan further than the delay entities accept, or results get labelled with offsets
+  // that were clamped
+  max = Math.min(max, ctx.writer.range('tweeter_delay').max, ctx.writer.range('mid_delay').max);
   const xo = crossoverHz(ctx);
   const invert = !ctx.writer.value('tweeter_invert');
   const currentOffset = Number(ctx.writer.value('tweeter_delay') ?? 0) - Number(ctx.writer.value('mid_delay') ?? 0);
@@ -212,16 +225,24 @@ export async function delayScan(ctx, { max = 50, coarse = 5, fine = 1 } = {}) {
  * Low end from a nearfield measurement of the mid cone (tweeter muted, separate level).
  * Sealed: f0/Q0 for the Linkwitz transform and a subsonic below the f3.
  * Ported / passive radiator: the tuning frequency fb and a subsonic at 0.8 x fb.
- * @param {Ctx} ctx @param {{ nearfieldVolume?: number }} [o]
+ * @param {Ctx} ctx @param {{ nearfieldVolume?: number, restoreVolume?: number | null }} [o]
  */
-export async function lowEnd(ctx, { nearfieldVolume } = {}) {
-  const sessionVolume = await ctx.measurer.getVolume();
+export async function lowEnd(ctx, { nearfieldVolume, restoreVolume } = {}) {
+  // the volume to go back to is passed in: by the time this runs, levelling for the
+  // nearfield position has already changed the player's volume
+  const sessionVolume = restoreVolume ?? (await ctx.measurer.getVolume());
   if (nearfieldVolume !== undefined) await ctx.measurer.setVolume(nearfieldVolume);
+  // measure the box itself: the bass filters this step suggests are switched off for the test,
+  // or the fit would read back the Linkwitz transform or subsonic filter already set
+  /** @type {Record<string, any>} */
+  const test = {};
+  if (ctx.writer.entities.tweeter_mute) Object.assign(test, { tweeter_mute: true, mid_mute: false });
+  for (const role of ['linkwitz_f0', 'linkwitz_fp', 'subsonic_frequency', 'baffle_width']) if (ctx.writer.entities[role]) test[role] = 0;
   /** @type {import('./record.js').MeasurementRecord} */
   let m;
   try {
     const run = () => ctx.measurer.measure({ label: 'Nearfield mid', kind: 'nearfield', positions: 1, signal: ctx.signal, onStatus: ctx.onStatus });
-    m = ctx.writer.entities.tweeter_mute ? await withValues(ctx, { tweeter_mute: true, mid_mute: false }, run) : await run();
+    m = Object.keys(test).length ? await withValues(ctx, test, run) : await run();
     ctx.onMeasurement?.(m);
   } finally {
     if (sessionVolume !== null && nearfieldVolume !== undefined) await ctx.measurer.setVolume(sessionVolume);
@@ -256,9 +277,9 @@ export function boostFloor({ fb, subsonic }) {
  * Baffle step suggestion from a far-field mid (or full) measurement.
  * @param {{ freqs: number[], db: number[] }} curve
  */
-export function baffleSuggestion(curve) {
+export function baffleSuggestion(curve, crossoverHz = Infinity) {
   const v = fitView(curve);
-  const s = suggestBaffleWidth(v.freqs, v.db);
+  const s = suggestBaffleWidth(v.freqs, v.db, { crossoverHz });
   return s ? { ...s, suggestion: { baffle_width: s.widthCm } } : null;
 }
 
@@ -267,11 +288,18 @@ export function baffleSuggestion(curve) {
  * Calibrated mics only: nobody can judge 10 kHz and up with an unknown mic.
  * @param {{ freqs: number[], db: number[] }} tweeterCurve @param {{ freqs: number[], db: number[] }} fullCurve
  * @param {import('../dsp/target.js').Target} target @param {string} tier @param {number} [fs] DSP sample rate
+ * @param {{ air_gain?: number, tweeter_notch_frequency?: number, tweeter_notch_gain?: number, tweeter_notch_q?: number }} [current]
+ *   the speaker's present notch and air settings
  */
-export function notchAndAir(tweeterCurve, fullCurve, target, tier, fs = 96000) {
+export function notchAndAir(tweeterCurve, fullCurve, target, tier, fs = 96000, current = {}) {
   if (tier !== 'calibrated') return { allowed: false, suggestion: {} };
-  const t = fitView(normalised(tweeterCurve));
-  const f = fitView(normalised(fullCurve));
+  // take the notch and air shelf the speaker has now out of the curves, so the suggestions
+  // are absolute settings rather than corrections on top of what is already there
+  const now = currentNotchAirDb(current, fs);
+  const t0 = fitView(normalised(tweeterCurve));
+  const f0 = fitView(normalised(fullCurve));
+  const t = { freqs: t0.freqs, db: t0.db.map((d, i) => d - now(t0.freqs[i])) };
+  const f = { freqs: f0.freqs, db: f0.db.map((d, i) => d - now(f0.freqs[i])) };
   const notch = detectBreakupPeak(t.freqs, t.db);
   // judge the air shelf on the response as it will be once the notch is in, or the
   // breakup peak gets cut twice
@@ -281,4 +309,18 @@ export function notchAndAir(tweeterCurve, fullCurve, target, tier, fs = 96000) {
   const suggestion = { air_gain: air };
   if (notch) Object.assign(suggestion, { tweeter_notch_frequency: notch.frequency, tweeter_notch_gain: notch.gainDb, tweeter_notch_q: notch.q });
   return { allowed: true, notch, air, suggestion };
+}
+
+/**
+ * dB response of the present notch and air shelf (as the fork applies them), as a function of f.
+ * @param {{ air_gain?: number, tweeter_notch_frequency?: number, tweeter_notch_gain?: number, tweeter_notch_q?: number }} c
+ * @param {number} fs
+ */
+function currentNotchAirDb(c, fs) {
+  const parts = [];
+  if (c.air_gain) parts.push(highShelf(10000, c.air_gain, Math.SQRT1_2, fs));
+  if ((c.tweeter_notch_frequency ?? 0) >= 1000 && (c.tweeter_notch_gain ?? 0) < 0) {
+    parts.push(peaking(c.tweeter_notch_frequency ?? 0, c.tweeter_notch_gain ?? 0, c.tweeter_notch_q ?? 5, fs));
+  }
+  return (/** @type {number} */ f) => parts.reduce((sum, q) => sum + magnitudeDb(q, f, fs), 0);
 }

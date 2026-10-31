@@ -31,6 +31,8 @@ import { alignmentOffset, rmsDeviation } from './metrics.js';
  */
 
 const FLOOR_SPILL_DB = 1;
+// weight of the penalty for the filters together going past the tier's gain limits
+const LIMIT_WEIGHT = 25;
 // +-1/6 octave around a rejected null is kept free of boosts
 const NULL_ZONE_RATIO = Math.pow(2, 1 / 6);
 
@@ -81,16 +83,25 @@ export function fitPeq(input) {
   const maxBoostQ = input.maxBoostQ ?? 8;
   const gainMax = rules.cutsOnly ? 0 : Math.min(rules.gainMax, ranges.gain.max);
   const gainMin = Math.max(rules.gainMin, ranges.gain.min);
-  const qGrid = (input.qGrid ?? DEFAULT_Q_GRID).filter((q) => q >= ranges.q.min && q <= ranges.q.max);
+  const inRangeQ = (input.qGrid ?? DEFAULT_Q_GRID).filter((q) => q >= ranges.q.min && q <= ranges.q.max);
+  const qGrid = inRangeQ.length ? inRangeQ : [Math.min(ranges.q.max, Math.max(ranges.q.min, 1))];
   // refinement stays within the grid's Q span: very wide filters spill into everything
   const qLo = Math.max(ranges.q.min, Math.min(...qGrid));
   const qHi = ranges.q.max;
 
   const n = freqs.length;
-  /** @type {number[]} */
+  /** @type {number[]} points the cost looks at */
   const idx = [];
+  // the half octave below the fit range is watched too: nothing may be lifted there by
+  // spill from a boost inside the range (that is where drivers run out of excursion)
+  const guard = new Uint8Array(n);
   for (let i = 0; i < n; i++) {
-    if (freqs[i] >= rules.fMin && freqs[i] <= rules.fMax && !input.mask?.[i]) idx.push(i);
+    if (input.mask?.[i]) continue;
+    if (freqs[i] >= rules.fMin && freqs[i] <= rules.fMax) idx.push(i);
+    else if (freqs[i] >= rules.fMin / Math.SQRT2 && freqs[i] < rules.fMin) {
+      idx.push(i);
+      guard[i] = 1;
+    }
   }
 
   const offset = alignmentOffset(freqs, measuredDb, targetDb, rules.fMin, rules.fMax, input.mask);
@@ -105,6 +116,7 @@ export function fitPeq(input) {
   }
   /** error the filters still have to fix at point i */
   const residual = (/** @type {number} */ i, /** @type {Float64Array} */ total) => {
+    if (guard[i]) return total[i] > FLOOR_SPILL_DB ? FLOOR_SPILL_DB - total[i] : 0;
     if (!floorZone[i]) return wanted[i] - total[i];
     if (total[i] > FLOOR_SPILL_DB) return FLOOR_SPILL_DB - total[i];
     return total[i] < 0 ? -total[i] : 0;
@@ -131,6 +143,10 @@ export function fitPeq(input) {
     for (const i of idx) {
       const d = residual(i, total);
       s += d * d;
+      // the tier's gain limits hold for the filters together, not just each one: several
+      // boosts stacked on one dip would otherwise add up far beyond them
+      if (total[i] > gainMax) s += LIMIT_WEIGHT * (total[i] - gainMax) ** 2;
+      else if (total[i] < gainMin) s += LIMIT_WEIGHT * (gainMin - total[i]) ** 2;
     }
     return s;
   };
@@ -200,8 +216,19 @@ export function fitPeq(input) {
       // a narrow dip that only a high-Q boost fits: most likely a room cancellation.
       // Leave the whole neighbourhood alone, or a later pass fills it at a slightly lower Q.
       rejected.push({ f, reason: 'narrow null, not boosted' });
-      noBoost.push([f / NULL_ZONE_RATIO, f * NULL_ZONE_RATIO]);
+      const lo = f / NULL_ZONE_RATIO;
+      const hi = f * NULL_ZONE_RATIO;
+      noBoost.push([lo, hi]);
       banned.add(pick);
+      // the null's neighbourhood is protected like the region below the boost floor, and any
+      // boost already placed there (before the null was recognised) is taken out again
+      for (let i = 0; i < n; i++) if (freqs[i] >= lo && freqs[i] <= hi && wanted[i] >= 0) floorZone[i] = 1;
+      for (let k = filters.length - 1; k >= 0; k--) {
+        if (filters[k].gain > 0 && filters[k].f >= lo && filters[k].f <= hi) {
+          total = combine(total, filters[k].resp, -1);
+          filters.splice(k, 1);
+        }
+      }
       continue;
     }
     if (before - best.value < 1e-6 * Math.max(1, before) || Math.abs(best.gain) < 0.1) {
@@ -262,6 +289,43 @@ export function fitPeq(input) {
   }
   out.sort((a, b) => a.f - b.f);
 
+  // hard limit: the filters together must stay within the tier's gains at every point of the
+  // fit range (the fit only penalises going over, and rounding to steps can add a little)
+  const respOf = (/** @type {FittedFilter} */ p) => {
+    const c = peaking(p.f, p.gain, p.q, fs);
+    return Array.from(freqs, (f) => magnitudeDb(c, f, fs));
+  };
+  const step = ranges.gain.step > 0 ? ranges.gain.step : 0.5;
+  for (let guardLoop = 0; guardLoop < 200; guardLoop++) {
+    const resps = out.map(respOf);
+    let worst = -1;
+    let over = 0.05;
+    for (const i of idx) {
+      const sum = resps.reduce((acc, r) => acc + r[i], 0);
+      const excess = Math.max(sum - gainMax, gainMin - sum);
+      if (excess > over) {
+        over = excess;
+        worst = i;
+      }
+    }
+    if (worst < 0) break;
+    const sum = resps.reduce((acc, r) => acc + r[worst], 0);
+    const sign = sum > gainMax ? 1 : -1;
+    // the filter pushing hardest in that direction at that point gives up one step
+    let k = -1;
+    for (let j = 0; j < out.length; j++) if (Math.sign(out[j].gain) === sign && (k < 0 || sign * resps[j][worst] > sign * resps[k][worst])) k = j;
+    if (k < 0) break;
+    out[k].gain = Math.round((out[k].gain - sign * step) * 1e6) / 1e6;
+    if (Math.sign(out[k].gain) !== sign || Math.abs(out[k].gain) < 1e-9) out.splice(k, 1);
+  }
+
+  // a null and its skirts can be rejected several times: report each null once, at the first
+  // rejection (the greedy pass reaches the deepest point first)
+  /** @type {typeof rejected} */
+  const nulls = [];
+  for (const r of rejected) if (!nulls.some((k) => Math.abs(Math.log2(r.f / k.f)) <= 1 / 3)) nulls.push(r);
+  nulls.sort((a, b) => a.f - b.f);
+
   const filterDb = new Float64Array(n);
   for (const p of out) {
     const c = peaking(p.f, p.gain, p.q, fs);
@@ -277,7 +341,7 @@ export function fitPeq(input) {
     offsetDb: offset,
     rmsBefore: rmsDeviation(freqs, measuredDb, targetDb, rules.fMin, rules.fMax, input.mask),
     rmsAfter: rmsDeviation(freqs, predictedDb, targetDb, rules.fMin, rules.fMax, input.mask),
-    rejected,
+    rejected: nulls,
   };
 }
 

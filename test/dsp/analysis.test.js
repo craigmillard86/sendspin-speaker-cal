@@ -87,6 +87,10 @@ test('sealed box: fit recovers f0 and Q0', () => {
   assert.ok(Math.abs(r.f0 - 55) / 55 < 0.02, `f0 ${r.f0}`);
   assert.ok(Math.abs(r.q0 - 0.8) < 0.03, `q0 ${r.q0}`);
   assert.ok(f3Of(55, 0.707) > 54 && f3Of(55, 0.707) < 56, 'Butterworth f3 equals f0');
+  for (const q of [0.5, 0.8, 1, 1.2, 1.5]) {
+    const f3 = f3Of(80, q);
+    assert.ok(Math.abs(highpass2Db(f3, 80, q) + 3.01) < 0.05, `Q ${q}: |H| at f3 = ${highpass2Db(f3, 80, q).toFixed(2)} dB`);
+  }
   assert.ok(Math.abs(linkwitzBoostDb(80, 50) - 8.16) < 0.05, 'README example: 80 Hz to 50 Hz is +8.2 dB');
 });
 

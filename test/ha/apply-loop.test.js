@@ -49,8 +49,9 @@ test('apply and re-measure loop lowers the deviation, then revert restores the s
   assert.ok(result.steps.every((s) => s.report.ok));
   assert.ok(result.finalRms < result.startRms - 0.5, `rms ${result.startRms.toFixed(2)} -> ${result.finalRms.toFixed(2)}`);
 
-  // the device holds what the last pass wrote
-  const last = result.steps[result.steps.length - 1].changes;
+  // the device holds what the last kept pass wrote (a pass that made things worse is undone)
+  const kept = result.steps.filter((x) => !x.undone);
+  const last = kept[kept.length - 1].changes;
   for (const [role, value] of Object.entries(last)) {
     const got = writer.value(role);
     if (typeof value === 'number') assert.ok(Math.abs(got - value) < 1e-6, `${role}: ${got} vs ${value}`);

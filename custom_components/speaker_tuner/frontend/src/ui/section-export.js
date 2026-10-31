@@ -54,7 +54,7 @@ export function renderExport(app) {
   return card('Export', 'ESPHome YAML, filters, report', [
     h('p', { class: 'help' }, 'The settings are already saved on the device. Put them in its YAML too, so they survive a factory reset and can be shared: paste this into the device config, flash, then use "Reset device to YAML" in Speaker settings.'),
     error ? h('p', { class: 'notice notice-error' }, error) : null,
-    out.problems.length ? h('div', { class: 'notice notice-warn' }, h('strong', null, 'ESPHome would reject some values: '), h('ul', null, out.problems.map((p) => h('li', null, p)))) : null,
+    out.problems.length ? h('div', { class: 'notice notice-warn' }, h('strong', null, 'Check before flashing: '), h('ul', null, out.problems.map((p) => h('li', null, p)))) : null,
     h('textarea', { class: 'code', rows: 14, readOnly: true, spellcheck: false }, out.yaml),
     h('div', { class: 'row' },
       h('button', { class: 'primary', onclick: () => download(`${fileBase}-tuning.yaml`, out.yaml, 'text/yaml'), disabled: !out.yaml }, 'Download YAML'),

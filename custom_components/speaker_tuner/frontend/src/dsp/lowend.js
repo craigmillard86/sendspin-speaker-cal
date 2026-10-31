@@ -58,9 +58,9 @@ export function fitSealedRolloff(freqs, db, { fLow = 15, fHigh = 500 } = {}) {
  * @param {number} f0 @param {number} q
  */
 export function f3Of(f0, q) {
-  // |H|^2 = 1/2 solved for x^2 = (f/f0)^2
+  // |H|^2 = 1/2 gives u^2 - a u - 1 = 0 for u = (f/f0)^2, with a = 1/q^2 - 2
   const a = 1 / (q * q) - 2;
-  const x2 = (-a + Math.sqrt(a * a + 4)) / 2;
+  const x2 = (a + Math.sqrt(a * a + 4)) / 2;
   return f0 * Math.sqrt(x2);
 }
 

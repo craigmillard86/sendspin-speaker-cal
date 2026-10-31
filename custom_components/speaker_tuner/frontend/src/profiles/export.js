@@ -58,6 +58,32 @@ export function forkYamlProblems(s) {
   return problems;
 }
 
+/** Settings that protect the tweeter or depend on wiring: never exported as a silent default. */
+const CRITICAL_ROLES = {
+  'tas58xx-crossover': ['crossover_frequency', 'crossover_filter', 'crossover_tweeter_channel'],
+};
+
+/**
+ * Values the export would have to invent. A YAML that says tweeter_channel: LEFT because the
+ * entity wasn't mapped, or 500 Hz as the tweeter minimum, can put the wrong signal on a tweeter.
+ * @param {import('./profile.js').Profile} profile @param {Record<string, any>} values role values read from the device
+ * @param {{ tweeterMinFrequency?: number }} [meta]
+ */
+export function exportGaps(profile, values, { tweeterMinFrequency } = {}) {
+  const gaps = [];
+  const known = Object.values(values).filter((v) => v !== null && v !== undefined).length;
+  if (!known) gaps.push('The speaker is not reporting any values (offline?). Export once it is back, or the YAML is all defaults.');
+  for (const role of CRITICAL_ROLES[/** @type {keyof typeof CRITICAL_ROLES} */ (profile.component)] ?? []) {
+    if (values[role] === null || values[role] === undefined) {
+      gaps.push(`${role} is not mapped or not reported, so the export uses the profile default. Check that line against your speaker before flashing.`);
+    }
+  }
+  if (profile.component === 'tas58xx-crossover' && tweeterMinFrequency === undefined) {
+    gaps.push('The tweeter minimum frequency is unknown (crossover frequency not mapped), so the export uses 500 Hz. Set tweeter_min_frequency to your YAML value before flashing.');
+  }
+  return gaps;
+}
+
 /**
  * @param {import('./profile.js').Profile} profile @param {Record<string, any>} values
  * @param {{ deviceName?: string, tweeterMinFrequency?: number, date?: Date }} [meta]
@@ -65,9 +91,12 @@ export function forkYamlProblems(s) {
 export function exportYaml(profile, values, meta = {}) {
   if (!profile.yaml_template) throw new Error('This profile has no YAML template.');
   const yaml = render(profile.yaml_template, templateValues(profile, values, meta));
-  const problems = profile.component === 'tas58xx-crossover'
-    ? forkYamlProblems(crossoverSettings(profile, { ...values, tweeter_min_frequency: meta.tweeterMinFrequency }))
-    : [];
+  const problems = [
+    ...exportGaps(profile, values, meta),
+    ...(profile.component === 'tas58xx-crossover'
+      ? forkYamlProblems(crossoverSettings(profile, { ...values, tweeter_min_frequency: meta.tweeterMinFrequency }))
+      : []),
+  ];
   return { yaml, problems };
 }
 

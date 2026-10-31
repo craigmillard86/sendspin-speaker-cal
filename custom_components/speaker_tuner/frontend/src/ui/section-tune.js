@@ -30,7 +30,7 @@ function ctxFor(app, signal, { positions = app.settings.checkPositions, showAll 
     positions,
     signal,
     onStatus: (/** @type {string} */ t) => app.status(t),
-    onPrompt: (/** @type {number} */ i, /** @type {number} */ n) => app.promptPosition(i, n),
+    onPrompt: (/** @type {number} */ i, /** @type {number} */ n) => app.promptPosition(i, n, signal),
     onMeasurement: (/** @type {any} */ m) => {
       app.addMeasurement(m);
       // scans make many measurements; only the first few stay on the chart
@@ -41,7 +41,8 @@ function ctxFor(app, signal, { positions = app.settings.checkPositions, showAll 
       getVolume: () => inner.getVolume(),
       setVolume: (/** @type {number} */ v) => inner.setVolume(v),
       autoLevel: (/** @type {any} */ o) => inner.autoLevel(o),
-      measure: (/** @type {any} */ req) => (req.kind === 'nearfield' ? inner.measure(req) : app.measure(req, signal)),
+      // every measurement goes through the app (loudness off, session); nearfield keeps its own level
+      measure: (/** @type {any} */ req) => app.measure(req, signal, { keepVolume: req.kind === 'nearfield' }),
     },
   };
 }
@@ -93,6 +94,8 @@ function step(app, { id, title, text, needs, run, describe, extra, enabled = tru
   const suggestion = result?.suggestion ?? {};
   const hasSuggestion = Object.keys(suggestion).length > 0;
   const go = () => app.run(title, async (signal) => {
+    // the revert point is taken before the step writes its first test value
+    await app.ensureSession();
     app.results[id] = await run(signal);
   });
   return h('div', { class: 'step' },
@@ -138,8 +141,10 @@ export function renderTune(app) {
       run: async (signal) => {
         await app.confirm('Nearfield measurement', 'Put the mic about 1 cm from the centre of the mid/bass cone, pointing at it. The level is set again for this position and put back afterwards.', 'Measure');
         const ctx = ctxFor(app, signal, { positions: 1 });
+        // remember the volume to return to before levelling for the nearfield position changes it
+        const back = app.session?.levelVolume ?? app.playerVolume();
         const lvl = await ctx.measurer.autoLevel({ start: 0.05, cap: app.session?.levelVolume ?? 0.3, signal, onStatus: ctx.onStatus });
-        return lowEnd(ctx, { nearfieldVolume: lvl.volume });
+        return lowEnd(ctx, { nearfieldVolume: lvl.volume, restoreVolume: back });
       },
       describe: (r) => r.enclosure === 'sealed'
         ? `Box resonance about ${Math.round(r.f0)} Hz, Q ${r.q0.toFixed(2)} (f3 ${Math.round(r.f3)} Hz). For a Linkwitz transform pick the target fp and Qp yourself in Speaker settings; each halving of fp is +12 dB of bass boost.`
@@ -195,9 +200,10 @@ export function renderTune(app) {
           app.refresh('tune');
         } }, 'Use this width')),
       run: async () => {
-        const m = latest('mid') ?? latest('full');
+        // the whole speaker first: a mid-alone curve has its own crossover roll-off in it
+        const m = latest('full') ?? latest('mid');
         if (!m) throw new Error('Measure the mid alone (or the whole speaker) first.');
-        const s = baffleSuggestion(m.curve);
+        const s = baffleSuggestion(m.curve, Number(app.writer?.value('crossover_frequency') ?? Infinity));
         if (!s) return { suggestion: {}, none: true };
         return s;
       },
@@ -212,7 +218,9 @@ export function renderTune(app) {
         const t = latest('tweeter');
         const f = latest('full');
         if (!t || !f) throw new Error('Measure the tweeter alone and the whole speaker first (Driver levels does both).');
-        return notchAndAir(t.curve, f.curve, app.target, tier, app.profile?.dsp_sample_rate ?? 96000);
+        const w = /** @type {DspWriter} */ (app.writer);
+        const current = Object.fromEntries(['air_gain', 'tweeter_notch_frequency', 'tweeter_notch_gain', 'tweeter_notch_q'].map((r) => [r, Number(w.value(r) ?? 0)]));
+        return notchAndAir(t.curve, f.curve, app.target, tier, app.profile?.dsp_sample_rate ?? 96000, current);
       },
       describe: (r) => `${r.notch ? `Breakup peak at ${formatHz(r.notch.frequency)}Hz: notch ${r.notch.gainDb} dB, Q ${r.notch.q}. ` : 'No breakup peak found. '}Air shelf ${db(r.air)}.`,
     }),
@@ -235,18 +243,10 @@ export function renderTune(app) {
     abBlock(app),
     copyBlock(app),
     h('div', { class: 'row' },
-      h('button', { class: 'danger', disabled: !app.session || !!app.busy, onclick: () => revert(app) }, 'Revert to session start'),
-      app.session ? h('span', { class: 'muted' }, `Session started ${new Date(app.session.started).toLocaleString()}`) : null,
-      app.session ? h('button', { class: 'link', onclick: async () => {
-        try {
-          await app.confirm('End the session?', 'The current values become the new starting point for Revert, and the level is set again next time.', 'End session');
-          app.session = null;
-          app.persist();
-          app.refresh();
-        } catch {
-          /* cancelled */
-        }
-      } }, 'End session') : null),
+      h('button', { class: 'danger', disabled: !sessionHere(app) || !!app.busy, onclick: () => revert(app) }, 'Revert to session start'),
+      sessionHere(app) ? h('span', { class: 'muted' }, `Session started ${new Date(/** @type {any} */ (app.session).started).toLocaleString()}`) : null,
+      app.session && !sessionHere(app) ? h('span', { class: 'muted' }, `The open session belongs to another speaker (${app.mappings.find((m) => m.id === app.session?.deviceId)?.name ?? 'removed'}); measuring here starts a new one.`) : null,
+      sessionHere(app) ? h('button', { class: 'link', disabled: !!app.busy, onclick: () => endSession(app) }, 'End session') : null),
   ], ready);
 }
 
@@ -320,7 +320,10 @@ function peqBlock(app, fulls, chartReference) {
     app.refresh('measure');
     a.refineResult = result;
     a.abB = w.snapshot(settingRoles(/** @type {any} */ (app.profile)));
-    if (result.steps.every((s) => s.report.ok)) {
+    const failedUndo = result.steps.find((s) => s.undoReport && !s.undoReport.ok);
+    // the worse pass could not be undone: show what is left and offer to retry the undo
+    if (failedUndo?.undoReport) reportWrite(app, failedUndo.undoReport, failedUndo.undoValues ?? {});
+    if (result.steps.every((s) => s.report.ok) && !failedUndo) {
       app.notify(`RMS deviation ${result.startRms.toFixed(2)} → ${result.finalRms.toFixed(2)} dB after ${result.steps.length} pass${result.steps.length === 1 ? '' : 'es'} (${result.reason}). Values are saved on the device; wait a minute before power-cycling it.`, 'ok');
     }
     await checkHeadroom(app);
@@ -356,9 +359,13 @@ function peqBlock(app, fulls, chartReference) {
 function revert(app) {
   return app.run('Reverting to the session start', async (signal) => {
     const s = app.session;
-    if (!s) throw new Error('No session to revert to.');
-    await app.confirm('Revert?', 'Writes back every DSP value captured when this session started.', 'Revert');
-    const r = await /** @type {DspWriter} */ (app.writer).write(s.snapshot, { signal });
+    if (!s || !sessionHere(app)) throw new Error('No session for this speaker to revert to.');
+    await app.confirm('Revert?', 'Writes back every DSP value captured when this session started, and unmutes both drivers.', 'Revert');
+    const values = { ...s.snapshot };
+    // mutes are never part of a snapshot (they always start off), but an interrupted
+    // single-driver measurement can leave one on
+    for (const m of ['tweeter_mute', 'mid_mute']) if (app.has(m)) values[m] = false;
+    const r = await /** @type {DspWriter} */ (app.writer).write(values, { signal });
     if (s.volume !== null) await app.setPlayerVolume(s.volume).catch(() => {});
     reportWrite(app, r, s.snapshot);
     if (r.ok) app.notify('Reverted to the values at the start of the session.', 'ok');
@@ -368,7 +375,7 @@ function revert(app) {
 /** A/B listening between the session start and the tuned values. @param {App} app */
 function abBlock(app) {
   const a = /** @type {any} */ (app);
-  if (!app.session || !app.writer) return null;
+  if (!sessionHere(app) || !app.writer) return null;
   const tuned = a.abB;
   const gains = app.has('tweeter_gain') && app.has('mid_gain');
   // loudness difference between the first and the last whole-speaker measurement of the session
@@ -388,6 +395,7 @@ function abBlock(app) {
     if (trim) for (const g of ['tweeter_gain', 'mid_gain']) values[g] = Number(values[g] ?? 0) + trim;
     const r = await /** @type {DspWriter} */ (app.writer).write(values, { signal });
     a.abNow = which;
+    a.abTrim = trim;
     reportWrite(app, r, values);
   });
   return h('div', { class: 'step' },
@@ -398,7 +406,10 @@ function abBlock(app) {
       h('button', { onclick: () => play('A'), disabled: !!app.busy, class: a.abNow === 'A' ? 'primary' : '' }, 'A: before'),
       h('button', { onclick: () => play('B'), disabled: !!app.busy || !tuned, class: a.abNow === 'B' ? 'primary' : '' }, 'B: tuned'),
       h('button', { class: 'link', onclick: () => {
-        a.abB = /** @type {DspWriter} */ (app.writer).snapshot(settingRoles(/** @type {any} */ (app.profile)));
+        const b = /** @type {DspWriter} */ (app.writer).snapshot(settingRoles(/** @type {any} */ (app.profile)));
+        // the gains on the speaker may carry the A/B level-match trim: take it off again
+        if (a.abTrim) for (const g of ['tweeter_gain', 'mid_gain']) if (g in b) b[g] = Number(b[g]) - a.abTrim;
+        a.abB = b;
         app.refresh('tune');
       } }, 'Save current values as B'),
       gains ? h('label', { class: 'check' }, matched, ` Level match (${db(diff)})`) : h('span', { class: 'muted' }, 'Level matching needs the driver gain roles.')),
@@ -413,11 +424,13 @@ function copyBlock(app) {
   const targetId = a.copyTarget && others.some((m) => m.id === a.copyTarget) ? a.copyTarget : others[0].id;
   const copy = () => app.run('Copying the tuning', async (signal) => {
     const other = /** @type {any} */ (others.find((m) => m.id === targetId));
-    await app.confirm('Copy the tuning?', `Writes every DSP value of ${app.mapping?.name} to ${other.name}.`, 'Copy');
-    const values = /** @type {DspWriter} */ (app.writer).snapshot(settingRoles(/** @type {any} */ (app.profile)));
+    await app.confirm('Copy the tuning?', `Writes the DSP values of ${app.mapping?.name} to ${other.name}. Which output drives the tweeter is left as ${other.name} has it, since that depends on its wiring.`, 'Copy');
+    const values = /** @type {DspWriter} */ (app.writer).snapshot(settingRoles(/** @type {any} */ (app.profile)).filter((r) => !WIRING_ROLES.includes(r)));
     const w2 = new DspWriter(/** @type {any} */ (app.api), /** @type {any} */ (app.profile), other.entities);
     await w2.start();
     try {
+      // what the other speaker had, so the copy can be undone
+      a.copyUndo = { id: other.id, name: other.name, values: w2.snapshot(Object.keys(values)) };
       const r = await w2.write(values, { signal });
       reportWrite(app, r, values);
     } finally {
@@ -431,8 +444,14 @@ function copyBlock(app) {
     if (!app.recorder) throw new Error('Open the mic first.');
     await app.confirm('Verify', `Put the mic in the same place relative to ${other.name} as it was for ${app.mapping?.name}.`, 'Measure');
     const m = new MicMeasurer({ recorder: app.recorder, playback: new Playback(/** @type {any} */ (app.api), other.entities.media_player), mediaUrl: other.media_url, mic: app.mic });
+    const theirVolume = await m.getVolume().catch(() => null);
     if (app.session?.levelVolume) await m.setVolume(app.session.levelVolume);
-    const rec = await m.measure({ label: `${other.name} after copy`, kind: 'full', positions: mine.positions, signal, onPrompt: (i, n) => app.promptPosition(i, n), onStatus: (t) => app.status(t) });
+    let rec;
+    try {
+      rec = await m.measure({ label: `${other.name} after copy`, kind: 'full', positions: mine.positions, signal, onPrompt: (i, n) => app.promptPosition(i, n, signal), onStatus: (t) => app.status(t) });
+    } finally {
+      if (theirVolume !== null) await m.setVolume(theirVolume).catch(() => {});
+    }
     app.addMeasurement(rec);
     const rules = micRules(app.mic);
     const v1 = view(normalised(mine.curve), 12, 24);
@@ -449,5 +468,45 @@ function copyBlock(app) {
     h('div', { class: 'row' },
       select(others.map((m) => ({ value: m.id, label: m.name })), targetId, (v) => (a.copyTarget = v)),
       h('button', { onclick: copy, disabled: !!app.busy }, 'Copy settings'),
-      h('button', { onclick: verify, disabled: !!app.busy || app.demo }, 'Measure to verify')));
+      h('button', { onclick: verify, disabled: !!app.busy || app.demo }, 'Measure to verify'),
+      a.copyUndo ? h('button', { class: 'link', disabled: !!app.busy, onclick: () => undoCopy(app) }, `Undo the copy to ${a.copyUndo.name}`) : null));
+}
+
+/** Roles that depend on how a cabinet is wired, never copied between speakers. */
+const WIRING_ROLES = ['crossover_tweeter_channel'];
+
+/** Whether the open session belongs to the speaker on screen. @param {App} app */
+function sessionHere(app) {
+  return !!app.session && app.session.deviceId === app.mapping?.id;
+}
+
+/** End the session: the level and the revert point are forgotten; the volume goes back. @param {App} app */
+function endSession(app) {
+  return app.run('Ending the session', async () => {
+    await app.confirm('End the session?', 'The current values become the new starting point for Revert, the volume goes back to where it was before measuring, and the level is set again next time.', 'End session');
+    const s = app.session;
+    if (s?.volume !== null && s?.volume !== undefined) await app.setPlayerVolume(s.volume).catch(() => {});
+    if (app.has('tuning_mode')) await /** @type {DspWriter} */ (app.writer).write({ tuning_mode: false });
+    app.session = null;
+    app.persist();
+  });
+}
+
+/** Put back what the other speaker had before the copy. @param {App} app */
+function undoCopy(app) {
+  const a = /** @type {any} */ (app);
+  return app.run('Undoing the copy', async (signal) => {
+    const u = a.copyUndo;
+    const other = app.mappings.find((m) => m.id === u?.id);
+    if (!u || !other) throw new Error('Nothing to undo.');
+    const w2 = new DspWriter(/** @type {any} */ (app.api), /** @type {any} */ (app.profile), other.entities);
+    await w2.start();
+    try {
+      const r = await w2.write(u.values, { signal });
+      reportWrite(app, r, u.values);
+      if (r.ok) a.copyUndo = null;
+    } finally {
+      await w2.stop();
+    }
+  });
 }

@@ -40,6 +40,8 @@ export class DspWriter {
     this.waiters = new Set();
     /** @type {null | (() => any)} */
     this.unsubscribe = null;
+    /** @type {null | (() => void)} called after a mapped entity changes */
+    this.onChange = null;
   }
 
   /** Load current states and follow changes. */
@@ -50,8 +52,16 @@ export class DspWriter {
       if (!ids.has(id)) return;
       this.states.set(id, event.data.new_state);
       for (const w of [...this.waiters]) w();
+      this.onChange?.();
     });
     for (const s of await this.api.getStates()) if (ids.has(s.entity_id)) this.states.set(s.entity_id, s);
+  }
+
+  /** Fetch every state again, e.g. after a reconnect, when changes may have been missed. */
+  async reload() {
+    const ids = new Set(Object.values(this.entities));
+    for (const s of await this.api.getStates()) if (ids.has(s.entity_id)) this.states.set(s.entity_id, s);
+    for (const w of [...this.waiters]) w();
   }
 
   async stop() {

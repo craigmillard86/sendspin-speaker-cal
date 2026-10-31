@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { fitPeq, tierRules, twoWayBanks } from '../../custom_components/speaker_tuner/frontend/src/dsp/fit.js';
 import { responseDb } from '../../custom_components/speaker_tuner/frontend/src/dsp/biquad.js';
 import { logGrid } from '../../custom_components/speaker_tuner/frontend/src/dsp/smoothing.js';
+import { highpass2Db } from '../../custom_components/speaker_tuner/frontend/src/dsp/lowend.js';
+import { effectiveBoostFloor } from '../../custom_components/speaker_tuner/frontend/src/measure/peq.js';
 
 const FS = 96000;
 const freqs = logGrid(20, 20000, 24);
@@ -101,4 +103,33 @@ test('a deep narrow null is left alone even when the boost limit would make a wi
   const near = result.filters.filter((f) => f.gain > 0 && Math.abs(Math.log2(f.f / 800)) < 1 / 6);
   assert.deepEqual(near, [], 'no boost near the null');
   assert.equal(result.rejected.length, 1);
+});
+
+const totalBoost = (result, lo, hi) => {
+  let worst = -Infinity;
+  result.filterDb.forEach((d, i) => { if (freqs[i] >= lo && freqs[i] <= hi) worst = Math.max(worst, d); });
+  return worst;
+};
+
+test('boosts do not stack past the tier limit on a wide dip', () => {
+  const measured = responseDb([{ f: 300, gain: -15, q: 1.5 }], freqs, FS);
+  for (const tier of ['uncalibrated', 'calibrated']) {
+    const result = fitPeq({ freqs, measuredDb: measured, targetDb: flat, fs: FS, rules: tierRules(tier), banks: oneBank, ranges });
+    const limit = tierRules(tier).gainMax;
+    assert.ok(totalBoost(result, 20, 20000) <= limit + 0.05, `${tier}: total boost ${totalBoost(result, 20, 20000).toFixed(1)} dB, limit ${limit}`);
+  }
+});
+
+test('boosts placed before a null is recognised are taken out again', () => {
+  const measured = responseDb([{ f: 5000, gain: -12, q: 3 }], freqs, FS);
+  const result = fitPeq({ freqs, measuredDb: measured, targetDb: flat, fs: FS, rules: tierRules('uncalibrated'), banks: oneBank, ranges });
+  assert.ok(totalBoost(result, 4000, 6000) <= 3.05, `boost into the 5 kHz dip: ${totalBoost(result, 4000, 6000).toFixed(1)} dB`);
+});
+
+test('no bass boost at the bottom of the range without a known tuning frequency', () => {
+  // a sealed box rolling off at 90 Hz: the fit must not chase the roll-off
+  const measured = freqs.map((f) => highpass2Db(f, 90, 0.7));
+  const result = fitPeq({ freqs, measuredDb: measured, targetDb: flat, fs: FS, rules: tierRules('calibrated'), banks: oneBank, ranges, boostFloorHz: effectiveBoostFloor(0, 60) });
+  assert.ok(totalBoost(result, 20, 60) <= 1.5, `lift below 60 Hz: ${totalBoost(result, 20, 60).toFixed(1)} dB`);
+  assert.ok(result.filters.filter((f) => f.gain > 0).every((f) => f.f >= 60 * Math.SQRT2));
 });

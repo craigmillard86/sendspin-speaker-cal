@@ -16,7 +16,9 @@ export function renderSettings(app) {
   const profile = app.profile;
   if (!w || !profile) return card('Speaker settings', 'Set up a speaker first', [h('p', { class: 'help' }, 'Set up a speaker first.')]);
   const roles = expandRoles(profile);
-  const mapped = settingRoles(profile).filter((r) => app.has(r));
+  // the driver mutes are not tuning settings (no snapshot, no export), but they must always be
+  // reachable here: an interrupted single-driver measurement can leave one on
+  const mapped = [...settingRoles(profile), 'tweeter_mute', 'mid_mute'].filter((r) => app.has(r));
 
   /** @param {string} role @param {any} value */
   const write = (role, value) => app.run(`Setting ${roles[role].label ?? role}`, async (signal) => {
@@ -51,11 +53,12 @@ export function renderSettings(app) {
 
   const resetToYaml = () => app.run('Resetting the device to its YAML values', async (signal) => {
     await app.confirm('Reset to YAML?', 'Presses "Reset Crossover to YAML" on the device: every saved Home Assistant value is replaced by the crossover: block in its YAML. Use it after flashing an exported YAML. The values are read back afterwards so you can see what changed.', 'Reset');
-    const before = w.snapshot(mapped);
+    const tuning = mapped.filter((r) => !r.endsWith('_mute'));
+    const before = w.snapshot(tuning);
     await w.press('crossover_reset');
     await sleep(3000, signal);
-    const after = w.snapshot(mapped);
-    const changed = mapped.filter((r) => JSON.stringify(before[r]) !== JSON.stringify(after[r]));
+    const after = w.snapshot(tuning);
+    const changed = tuning.filter((r) => JSON.stringify(before[r]) !== JSON.stringify(after[r]));
     /** @type {any} */ (app).resetDiff = changed.map((r) => ({ role: r, before: before[r], after: after[r] }));
     app.notify(changed.length
       ? `Reset done: ${changed.length} values changed. If the YAML holds your exported tuning, nothing should have changed; see the list below.`
