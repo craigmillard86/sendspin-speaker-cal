@@ -13,7 +13,7 @@ const SCALE = 0.02; // 1 s of recording takes 20 ms
  * A recorder whose "room" plays filtered pink noise from a set time after play() is called,
  * at a level that follows the media player volume. Samples appear as (scaled) time passes.
  */
-function fakeRig({ latencyS = 0.4, gainPerVolume = 1, silent = false } = {}) {
+function fakeRig({ latencyS = 0.4, gainPerVolume = 1, silent = false, neverPlays = false, dbVolume = false } = {}) {
   const noise = filterSamples([peaking(1000, 6, 2, FS)], pinkNoise(30 * FS, FS, { seed: 5 }));
   let t0 = 0;
   let playAt = Infinity;
@@ -22,7 +22,9 @@ function fakeRig({ latencyS = 0.4, gainPerVolume = 1, silent = false } = {}) {
   const sampleAt = (i) => {
     const room = ((i * 2654435761) % 1000) / 1e7; // tiny deterministic hiss
     const k = i - Math.round(playAt * FS);
-    return k >= 0 && !silent ? noise[k % noise.length] * volume * gainPerVolume + room : room;
+    // dbVolume: the volume slider spans -60..0 dB like the Louder's (10% is about -54 dB)
+    const gain = dbVolume ? Math.pow(10, (-60 + 60 * volume) / 20) * 4 : volume;
+    return k >= 0 && !silent && !neverPlays ? noise[k % noise.length] * gain * gainPerVolume + room : room;
   };
   const elapsedSamples = () => Math.floor(((Date.now() - t0) / 1000 / SCALE) * FS);
   const recorder = {
@@ -52,6 +54,9 @@ function fakeRig({ latencyS = 0.4, gainPerVolume = 1, silent = false } = {}) {
     async volume() {
       return volume;
     },
+    async waitUntilPlaying() {
+      if (neverPlays) throw new Error('did not start playing the test noise; it reports "idle"');
+    },
   };
   return { recorder, playback, volumeLog };
 }
@@ -70,10 +75,33 @@ test('measures through play, onset detection and analysis', async () => {
   assert.ok(rec.snrDb.some((x) => x > 30), 'noise well above the background');
 });
 
-test('reports no signal when nothing plays', async () => {
+test('a measurement the mic cannot hear says so', async () => {
   const { recorder, playback } = fakeRig({ silent: true });
   const m = new MicMeasurer({ recorder, playback, mediaUrl: 'x', mic: { name: 'Test', tier: 'unknown' }, timeScale: SCALE });
-  await assert.rejects(m.measure({ label: 'x', kind: 'full' }), /No test noise heard/);
+  await assert.rejects(m.measure({ label: 'x', kind: 'full' }), /mic does not hear the test noise/);
+});
+
+test('a player that never starts is reported as such, before any waiting on the mic', async () => {
+  const { recorder, playback } = fakeRig({ neverPlays: true });
+  const m = new MicMeasurer({ recorder, playback, mediaUrl: 'x', mic: { name: 'Test', tier: 'unknown' }, timeScale: SCALE });
+  await assert.rejects(m.autoLevel({}), /did not start playing/);
+  await assert.rejects(m.measure({ label: 'x', kind: 'full' }), /did not start playing/);
+});
+
+test('auto-level climbs from an inaudible start on a dB volume scale', async () => {
+  // at 10% the noise is ~54 dB down and the mic hears nothing: levelling must still go up
+  const { recorder, playback, volumeLog } = fakeRig({ dbVolume: true });
+  const m = new MicMeasurer({ recorder, playback, mediaUrl: 'x', mic: { name: 'Test', tier: 'calibrated' }, timeScale: SCALE });
+  const r = await m.autoLevel({ targetDbfs: -30, cap: 0.9 });
+  assert.equal(volumeLog[0], 0.1);
+  assert.ok(volumeLog.length > 5, `stepped ${volumeLog.join(', ')}`);
+  assert.ok(r.rmsDbfs >= -30 && !r.reachedCap, `settled at ${r.volume} with ${r.rmsDbfs.toFixed(1)} dBFS`);
+});
+
+test('auto-level says when even the cap is inaudible', async () => {
+  const { recorder, playback } = fakeRig({ silent: true });
+  const m = new MicMeasurer({ recorder, playback, mediaUrl: 'x', mic: { name: 'Test', tier: 'calibrated' }, timeScale: SCALE });
+  await assert.rejects(m.autoLevel({ cap: 0.3 }), /hears nothing above the room noise/);
 });
 
 test('auto-level steps the volume up to the target and stops there', async () => {

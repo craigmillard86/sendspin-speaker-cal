@@ -81,6 +81,7 @@ export class MicMeasurer {
       await this.playback.play(this.mediaUrl);
       onStatus?.('Waiting for the noise to start…');
       const started = Date.now();
+      await this.playback.waitUntilPlaying?.(ONSET_TIMEOUT_S * 1000 * this.t, signal);
       /** @type {ReturnType<typeof detectOnset>} */
       let onset = null;
       for (;;) {
@@ -93,7 +94,7 @@ export class MicMeasurer {
           onStatus?.(`Measuring… ${left.toFixed(0)} s`);
           if (samples.length >= needed) break;
         } else if (Date.now() - started > ONSET_TIMEOUT_S * 1000 * this.t) {
-          throw new Error('No test noise heard. Check the speaker is on, the media URL in setup plays in Home Assistant, and the right mic is picked.');
+          throw new Error('The speaker is playing, but the mic does not hear the test noise. Check the mic is the one picked in setup and near the speaker, and set the level again (the volume may be too low).');
         }
       }
       const samples = rec.stop();
@@ -138,18 +139,16 @@ export class MicMeasurer {
     await this.setVolume(volume);
     rec.start();
     try {
+      onStatus?.('Listening to the room…');
       await sleep(BACKGROUND_S * 1000 * this.t, signal);
+      const backgroundDbfs = levels(rec.peek()).rmsDbfs;
       await this.playback.play(this.mediaUrl);
+      // whether the noise plays is HA's to say, not the mic's: at the starting volume it can be
+      // far too quiet to hear (a speaker's volume often spans 60 dB), so the volume goes up
+      // step by step from here whether the mic hears anything yet or not
+      onStatus?.('Starting the test noise…');
+      await this.playback.waitUntilPlaying?.(ONSET_TIMEOUT_S * 1000 * this.t, signal);
       let played = Date.now();
-      /** @type {ReturnType<typeof detectOnset>} */
-      let onset = null;
-      while (!onset) {
-        await sleep(250 * this.t, signal);
-        onset = detectOnset(rec.peek(), fs, { backgroundSeconds: BACKGROUND_S, riseDb: 6, timeoutSeconds: ONSET_TIMEOUT_S });
-        if (!onset && Date.now() - played > ONSET_TIMEOUT_S * 1000 * this.t) {
-          throw new Error('No test noise heard while levelling. Check the speaker, the media URL and the mic.');
-        }
-      }
       for (;;) {
         await sleep(1500 * this.t, signal); // let the new volume reach the speaker
         const all = rec.peek();
@@ -161,7 +160,12 @@ export class MicMeasurer {
           throw new Error(`The mic is close to clipping (${peakDbfs.toFixed(1)} dBFS peak at ${Math.round(volume * 100)}% volume). Turn the mic or interface gain down and level again.`);
         }
         if (rmsDbfs >= targetDbfs) return { volume, rmsDbfs, reachedCap: false };
-        if (volume + step > cap + 1e-9) return { volume, rmsDbfs, reachedCap: true };
+        if (volume + step > cap + 1e-9) {
+          if (rmsDbfs < backgroundDbfs + 3) {
+            throw new Error(`The speaker is playing, but even at ${Math.round(volume * 100)}% the mic hears nothing above the room noise. Check the mic is the one picked in setup and near the speaker, and that the speaker's own volume range isn't very low.`);
+          }
+          return { volume, rmsDbfs, reachedCap: true };
+        }
         volume = Math.round((volume + step) * 100) / 100;
         await this.setVolume(volume);
         if (Date.now() - played > (NOISE_FILE_S - 4) * 1000 * this.t) {
