@@ -1,0 +1,10 @@
+"Sens Factor =-1.378dB, SERNO: 0000000"
+# Example REW-style calibration file for tests (made-up values)
+* exported comment style also allowed
+10.000	-4.20
+20.000	-1.00
+100.000	0.00
+1000.000	0.00
+10000.000	1.50
+20000.000, -2.00
+not a data line
