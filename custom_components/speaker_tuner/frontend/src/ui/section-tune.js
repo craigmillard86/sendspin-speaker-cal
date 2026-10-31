@@ -359,7 +359,7 @@ function revert(app) {
     if (!s) throw new Error('No session to revert to.');
     await app.confirm('Revert?', 'Writes back every DSP value captured when this session started.', 'Revert');
     const r = await /** @type {DspWriter} */ (app.writer).write(s.snapshot, { signal });
-    if (s.volume !== null) await app.measurer().setVolume(s.volume).catch(() => {});
+    if (s.volume !== null) await app.setPlayerVolume(s.volume).catch(() => {});
     reportWrite(app, r, s.snapshot);
     if (r.ok) app.notify('Reverted to the values at the start of the session.', 'ok');
   });

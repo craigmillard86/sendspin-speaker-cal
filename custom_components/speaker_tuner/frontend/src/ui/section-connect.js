@@ -9,16 +9,25 @@ import { HaApi, connectWithToken } from '../ha/connection.js';
 
 /** @param {import('./app.js').TunerApp} app */
 export function renderConnect(app) {
-  const saved = store.load('connection', { url: '', token: '' });
-  const url = /** @type {HTMLInputElement} */ (h('input', { type: 'url', placeholder: 'https://homeassistant.local:8123', value: saved.url, autocomplete: 'url' }));
-  const token = /** @type {HTMLInputElement} */ (h('input', { type: 'password', placeholder: 'Long-lived access token', value: saved.token, autocomplete: 'off' }));
-  const remember = /** @type {HTMLInputElement} */ (h('input', { type: 'checkbox', checked: !!saved.token }));
+  // what the user typed is kept on the app, so a re-render (e.g. after a failed attempt) doesn't wipe it
+  const a = /** @type {any} */ (app);
+  if (!a.connectForm) {
+    const saved = store.load('connection', { url: '', token: '' });
+    a.connectForm = { url: saved.url, token: saved.token, remember: !!saved.token };
+  }
+  const form = a.connectForm;
+  const url = /** @type {HTMLInputElement} */ (h('input', { type: 'url', placeholder: 'https://homeassistant.local:8123', value: form.url, autocomplete: 'url', oninput: () => (form.url = url.value) }));
+  const token = /** @type {HTMLInputElement} */ (h('input', { type: 'password', placeholder: 'Long-lived access token', value: form.token, autocomplete: 'off', oninput: () => (form.token = token.value) }));
+  const remember = /** @type {HTMLInputElement} */ (h('input', { type: 'checkbox', checked: form.remember, onchange: () => (form.remember = remember.checked) }));
 
   const connect = () => app.run('Connecting to Home Assistant', async () => {
-    const t = await connectWithToken(url.value.trim(), token.value.trim());
+    const address = url.value.trim();
+    if (!/^https?:\/\/[^/\s]+/i.test(address)) throw new Error('Enter your Home Assistant address, starting with https:// (or http://), for example https://homeassistant.local:8123');
+    if (!token.value.trim()) throw new Error('Paste a long-lived access token. Create one in Home Assistant: your profile, Security, Long-lived access tokens.');
+    const t = await connectWithToken(address, token.value.trim());
     app.api = new HaApi(t);
     app.demo = false;
-    store.save('connection', { url: url.value.trim(), token: remember.checked ? token.value.trim() : '' });
+    store.save('connection', { url: address, token: remember.checked ? token.value.trim() : '' });
     await app.connected();
     app.notify('Connected to Home Assistant.', 'ok');
   });

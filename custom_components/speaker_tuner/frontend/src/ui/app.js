@@ -5,7 +5,7 @@
 import { h } from './dom.js';
 import { ResponseChart } from './chart.js';
 import * as store from './store.js';
-import { HaApi } from '../ha/connection.js';
+import { HaApi, connectWithToken } from '../ha/connection.js';
 import { DspWriter } from '../ha/dsp-writer.js';
 import { Playback } from '../ha/playback.js';
 import { expandRoles, settingRoles, checkProfile } from '../profiles/profile.js';
@@ -103,7 +103,21 @@ export class TunerApp {
     this.layout();
     await this.loadAssets();
     if (this.api) await this.connected();
+    else if (this.mode === 'standalone') await this.reconnect();
     this.refresh();
+  }
+
+  /** Standalone page: log in again with a remembered token. */
+  async reconnect() {
+    const saved = store.load('connection', { url: '', token: '' });
+    if (!saved.url || !saved.token) return;
+    try {
+      this.api = new HaApi(await connectWithToken(saved.url, saved.token));
+      await this.connected();
+    } catch (e) {
+      this.api = null;
+      this.notify(`Could not reconnect to ${saved.url}: ${/** @type {Error} */ (e).message}`, 'warn');
+    }
   }
 
   async loadAssets() {
@@ -231,12 +245,25 @@ export class TunerApp {
 
   // ---------- session ----------
 
+  /** The media player's volume as HA reports it (no mic needed), or null. */
+  playerVolume() {
+    const v = this.writer?.stateOf('media_player')?.attributes?.volume_level;
+    return typeof v === 'number' ? v : null;
+  }
+
+  /** @param {number} level */
+  async setPlayerVolume(level) {
+    const player = this.mapping?.entities.media_player;
+    if (!player || !this.api) return;
+    await this.api.callService('media_player', 'volume_set', { volume_level: level }, { entity_id: player });
+  }
+
   /** Capture the values to revert to, the first time anything is measured or written. */
   async ensureSession() {
     if (this.session && this.session.deviceId === this.mapping?.id) return this.session;
     const writer = /** @type {DspWriter} */ (this.writer);
     const snapshot = writer.snapshot(settingRoles(/** @type {any} */ (this.profile)));
-    const volume = await this.measurer().getVolume().catch(() => null);
+    const volume = this.playerVolume();
     this.session = { snapshot, volume, levelVolume: null, started: new Date().toISOString(), deviceId: /** @type {any} */ (this.mapping).id };
     this.persist();
     return this.session;
