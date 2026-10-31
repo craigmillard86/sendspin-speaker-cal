@@ -153,3 +153,67 @@ export function filterSamples(cascade, input) {
   }
   return x;
 }
+
+/** @param {number} gainDb @param {boolean} invert @returns {Coefficients} */
+export function gain(gainDb, invert = false) {
+  const g = Math.pow(10, gainDb / 20) * (invert ? -1 : 1);
+  return { b0: g, b1: 0, b2: 0, a1: 0, a2: 0 };
+}
+
+const SPEED_OF_SOUND_MM_PER_S = 343000;
+
+/**
+ * 1st order all-pass approximating a delay of delay_mm, as in the fork.
+ * @param {number} delayMm @param {number} fs @returns {Coefficients}
+ */
+export function allpassDelay(delayMm, fs) {
+  if (delayMm <= 0 || fs <= 0) return passthrough();
+  const delayS = delayMm / SPEED_OF_SOUND_MM_PER_S;
+  let fc = 1 / (Math.PI * delayS);
+  if (fc >= fs / 2) fc = fs / 2 - 1;
+  const t = Math.tan((Math.PI * fc) / fs);
+  const c = (t - 1) / (t + 1);
+  return { b0: c, b1: 1, b2: 0, a1: c, a2: 0 };
+}
+
+/**
+ * Linkwitz transform from f0/q0 to fp/qp, as in the fork.
+ * @param {number} f0 @param {number} q0 @param {number} fp @param {number} qp @param {number} fs
+ */
+export function linkwitzTransform(f0, q0, fp, qp, fs) {
+  if (!(f0 > 0 && f0 < fs / 2) || !(fp > 0 && fp < fs / 2) || q0 <= 0 || qp <= 0) return passthrough();
+  const w0 = 2 * Math.PI * f0;
+  const wp = 2 * Math.PI * fp;
+  const fc = (f0 + fp) / 2;
+  const k = (2 * Math.PI * fc) / Math.tan((Math.PI * fc) / fs);
+  const k2 = k * k;
+  return normalise(
+    w0 * w0 + (k * w0) / q0 + k2, 2 * (w0 * w0 - k2), w0 * w0 - (k * w0) / q0 + k2,
+    wp * wp + (k * wp) / qp + k2, 2 * (wp * wp - k2), wp * wp - (k * wp) / qp + k2,
+  );
+}
+
+/**
+ * Complex response of a cascade at frequency f.
+ * @param {Coefficients[]} cascade @param {number} f @param {number} fs
+ * @returns {{ re: number, im: number }}
+ */
+export function cascadeResponse(cascade, f, fs) {
+  const w = (2 * Math.PI * f) / fs;
+  const z1r = Math.cos(w), z1i = -Math.sin(w);
+  const z2r = Math.cos(2 * w), z2i = -Math.sin(2 * w);
+  let re = 1, im = 0;
+  for (const c of cascade) {
+    const nr = c.b0 + c.b1 * z1r + c.b2 * z2r;
+    const ni = c.b1 * z1i + c.b2 * z2i;
+    const dr = 1 + c.a1 * z1r + c.a2 * z2r;
+    const di = c.a1 * z1i + c.a2 * z2i;
+    const den = dr * dr + di * di;
+    const hr = (nr * dr + ni * di) / den;
+    const hi = (ni * dr - nr * di) / den;
+    const r = re * hr - im * hi;
+    im = re * hi + im * hr;
+    re = r;
+  }
+  return { re, im };
+}

@@ -1,0 +1,449 @@
+{
+  "$schema": "../schema/profile.schema.json",
+  "id": "louder-tas5805m-crossover",
+  "name": "Louder ESP32 two-way (tas58xx crossover fork)",
+  "version": 1,
+  "component": "tas58xx-crossover",
+  "notes": "Sonocotta Louder ESP32-S3 (TAS5805M) driving a two-way cabinet through github.com/craigmillard86/esphome-tas58xx@crossover. Tweeter on one output, mid/bass on the other, passive radiators. Expose all six PEQ bands per driver in the device YAML to use the full fit.",
+  "enclosure": "passive_radiator",
+  "dsp_sample_rate": 96000,
+  "drivers": [
+    {
+      "id": "tweeter",
+      "name": "Tweeter"
+    },
+    {
+      "id": "mid",
+      "name": "Mid/bass"
+    }
+  ],
+  "crossover": {
+    "filter_options": {
+      "LR2": "LR2 12dB/oct",
+      "LR4": "LR4 24dB/oct",
+      "BW2": "Butterworth 12dB/oct",
+      "BW4": "Butterworth 24dB/oct"
+    }
+  },
+  "peq_banks": [
+    {
+      "id": "mid",
+      "name": "Mid",
+      "type": "parametric",
+      "bands": 6,
+      "role_prefix": "mid_peq_",
+      "domain": "below_crossover",
+      "ranges": {
+        "frequency": {
+          "min": 20,
+          "max": 20000,
+          "step": 1
+        },
+        "gain": {
+          "min": -15,
+          "max": 15,
+          "step": 0.5
+        },
+        "q": {
+          "min": 0.1,
+          "max": 10,
+          "step": 0.05
+        }
+      },
+      "type_options": {
+        "peaking": "Peaking",
+        "low_shelf": "Low Shelf",
+        "high_shelf": "High Shelf"
+      }
+    },
+    {
+      "id": "tweeter",
+      "name": "Tweeter",
+      "type": "parametric",
+      "bands": 6,
+      "role_prefix": "tweeter_peq_",
+      "domain": "above_crossover",
+      "ranges": {
+        "frequency": {
+          "min": 20,
+          "max": 20000,
+          "step": 1
+        },
+        "gain": {
+          "min": -15,
+          "max": 15,
+          "step": 0.5
+        },
+        "q": {
+          "min": 0.1,
+          "max": 10,
+          "step": 0.05
+        }
+      },
+      "type_options": {
+        "peaking": "Peaking",
+        "low_shelf": "Low Shelf",
+        "high_shelf": "High Shelf"
+      }
+    }
+  ],
+  "roles": {
+    "media_player": {
+      "domain": "media_player",
+      "label": "Media player that plays the test noise",
+      "group": "playback",
+      "hints": [
+        "player"
+      ],
+      "avoid": [
+        "sendspin",
+        "group"
+      ]
+    },
+    "tuning_mode": {
+      "domain": "switch",
+      "label": "Tuning mode (optional, unlocks DSP entities)",
+      "group": "playback",
+      "hints": [
+        "tuning_mode"
+      ]
+    },
+    "crossover_frequency": {
+      "domain": "number",
+      "label": "Crossover frequency",
+      "min": 500,
+      "max": 8000,
+      "step": 10,
+      "unit": "Hz",
+      "group": "crossover",
+      "hints": [
+        "crossover_frequency"
+      ],
+      "default": 2500
+    },
+    "crossover_filter": {
+      "domain": "select",
+      "label": "Crossover filter",
+      "group": "crossover",
+      "hints": [
+        "crossover_filter"
+      ],
+      "default": "LR4 24dB/oct",
+      "options": {
+        "LR2": "LR2 12dB/oct",
+        "LR4": "LR4 24dB/oct",
+        "BW2": "Butterworth 12dB/oct",
+        "BW4": "Butterworth 24dB/oct"
+      }
+    },
+    "crossover_tweeter_channel": {
+      "domain": "select",
+      "label": "Tweeter channel",
+      "group": "crossover",
+      "hints": [
+        "tweeter_channel"
+      ],
+      "default": "Left",
+      "options": {
+        "LEFT": "Left",
+        "RIGHT": "Right"
+      }
+    },
+    "tweeter_gain": {
+      "domain": "number",
+      "label": "Tweeter gain",
+      "min": -24,
+      "max": 6,
+      "step": 0.5,
+      "unit": "dB",
+      "group": "drivers",
+      "hints": [
+        "tweeter_gain"
+      ],
+      "default": -3
+    },
+    "mid_gain": {
+      "domain": "number",
+      "label": "Mid gain",
+      "min": -24,
+      "max": 6,
+      "step": 0.5,
+      "unit": "dB",
+      "group": "drivers",
+      "hints": [
+        "mid_gain"
+      ],
+      "default": 0
+    },
+    "tweeter_invert": {
+      "domain": "switch",
+      "label": "Tweeter polarity inverted",
+      "group": "drivers",
+      "hints": [
+        "tweeter_invert_polarity",
+        "tweeter_invert"
+      ],
+      "default": false
+    },
+    "mid_invert": {
+      "domain": "switch",
+      "label": "Mid polarity inverted",
+      "group": "drivers",
+      "hints": [
+        "mid_invert_polarity",
+        "mid_invert"
+      ],
+      "default": false
+    },
+    "tweeter_delay": {
+      "domain": "number",
+      "label": "Tweeter delay",
+      "min": 0,
+      "max": 50,
+      "step": 1,
+      "unit": "mm",
+      "group": "drivers",
+      "hints": [
+        "tweeter_delay"
+      ],
+      "default": 0
+    },
+    "mid_delay": {
+      "domain": "number",
+      "label": "Mid delay",
+      "min": 0,
+      "max": 50,
+      "step": 1,
+      "unit": "mm",
+      "group": "drivers",
+      "hints": [
+        "mid_delay"
+      ],
+      "default": 0
+    },
+    "tweeter_mute": {
+      "domain": "switch",
+      "label": "Mute tweeter",
+      "group": "drivers",
+      "hints": [
+        "mute_tweeter",
+        "tweeter_mute"
+      ],
+      "default": false
+    },
+    "mid_mute": {
+      "domain": "switch",
+      "label": "Mute mid",
+      "group": "drivers",
+      "hints": [
+        "mute_mid",
+        "mid_mute"
+      ],
+      "default": false
+    },
+    "subsonic_frequency": {
+      "domain": "number",
+      "label": "Subsonic filter",
+      "min": 0,
+      "max": 100,
+      "step": 1,
+      "unit": "Hz",
+      "group": "compensation",
+      "hints": [
+        "subsonic_filter",
+        "subsonic_frequency"
+      ],
+      "default": 0
+    },
+    "baffle_width": {
+      "domain": "number",
+      "label": "Baffle width",
+      "min": 0,
+      "max": 50,
+      "step": 1,
+      "unit": "cm",
+      "group": "compensation",
+      "hints": [
+        "baffle_width"
+      ],
+      "default": 0
+    },
+    "baffle_placement": {
+      "domain": "select",
+      "label": "Baffle placement",
+      "group": "compensation",
+      "hints": [
+        "baffle_placement"
+      ],
+      "default": "Freestanding",
+      "options": {
+        "FREESTANDING": "Freestanding",
+        "NEAR_WALL": "Near Wall",
+        "CORNER": "Corner"
+      }
+    },
+    "tweeter_notch_frequency": {
+      "domain": "number",
+      "label": "Tweeter notch frequency",
+      "min": 0,
+      "max": 20000,
+      "step": 10,
+      "unit": "Hz",
+      "group": "compensation",
+      "hints": [
+        "tweeter_notch_frequency"
+      ],
+      "default": 0
+    },
+    "tweeter_notch_gain": {
+      "domain": "number",
+      "label": "Tweeter notch gain",
+      "min": -24,
+      "max": 0,
+      "step": 0.5,
+      "unit": "dB",
+      "group": "compensation",
+      "hints": [
+        "tweeter_notch_gain"
+      ],
+      "default": 0
+    },
+    "tweeter_notch_q": {
+      "domain": "number",
+      "label": "Tweeter notch Q",
+      "min": 0.5,
+      "max": 20,
+      "step": 0.1,
+      "group": "compensation",
+      "hints": [
+        "tweeter_notch_q"
+      ],
+      "default": 5
+    },
+    "air_gain": {
+      "domain": "number",
+      "label": "Air shelf gain (10 kHz)",
+      "min": -6,
+      "max": 6,
+      "step": 0.5,
+      "unit": "dB",
+      "group": "compensation",
+      "hints": [
+        "air_shelf_gain",
+        "air_gain"
+      ],
+      "default": 0
+    },
+    "linkwitz_f0": {
+      "domain": "number",
+      "label": "Linkwitz box f0",
+      "min": 0,
+      "max": 200,
+      "step": 1,
+      "unit": "Hz",
+      "group": "compensation",
+      "hints": [
+        "linkwitz_box_f0",
+        "linkwitz_f0"
+      ],
+      "default": 0
+    },
+    "linkwitz_q0": {
+      "domain": "number",
+      "label": "Linkwitz box Q0",
+      "min": 0.3,
+      "max": 2,
+      "step": 0.01,
+      "group": "compensation",
+      "hints": [
+        "linkwitz_box_q0",
+        "linkwitz_q0"
+      ],
+      "default": 0.707
+    },
+    "linkwitz_fp": {
+      "domain": "number",
+      "label": "Linkwitz target fp",
+      "min": 0,
+      "max": 200,
+      "step": 1,
+      "unit": "Hz",
+      "group": "compensation",
+      "hints": [
+        "linkwitz_target_fp",
+        "linkwitz_fp"
+      ],
+      "default": 0
+    },
+    "linkwitz_qp": {
+      "domain": "number",
+      "label": "Linkwitz target Qp",
+      "min": 0.3,
+      "max": 2,
+      "step": 0.01,
+      "group": "compensation",
+      "hints": [
+        "linkwitz_target_qp",
+        "linkwitz_qp"
+      ],
+      "default": 0.5
+    },
+    "headroom_compensation": {
+      "domain": "switch",
+      "label": "Headroom compensation",
+      "group": "compensation",
+      "hints": [
+        "headroom_compensation"
+      ],
+      "default": false
+    },
+    "loudness": {
+      "domain": "switch",
+      "label": "Loudness",
+      "group": "playback",
+      "hints": [
+        "loudness"
+      ],
+      "default": false
+    },
+    "loudness_reference": {
+      "domain": "number",
+      "label": "Loudness reference",
+      "min": -60,
+      "max": 0,
+      "step": 1,
+      "unit": "dB",
+      "group": "playback",
+      "hints": [
+        "loudness_reference"
+      ],
+      "default": 0
+    },
+    "tweeter_peak_gain": {
+      "domain": "sensor",
+      "label": "Tweeter chain peak gain",
+      "group": "monitor",
+      "hints": [
+        "tweeter_peak_gain"
+      ]
+    },
+    "mid_peak_gain": {
+      "domain": "sensor",
+      "label": "Mid chain peak gain",
+      "group": "monitor",
+      "hints": [
+        "mid_peak_gain"
+      ]
+    },
+    "crossover_reset": {
+      "domain": "button",
+      "label": "Reset crossover to YAML",
+      "group": "monitor",
+      "hints": [
+        "reset_crossover_to_yaml",
+        "crossover_reset"
+      ]
+    }
+  },
+  "yaml_template": "# Speaker Tuner {{tool_version}}: {{profile_name}}\n# Device: {{device_name}}, exported {{date}}\n#\n# 1. Add these substitutions to your device YAML (merge with an existing substitutions: block).\n# 2. Replace the crossover: block under audio_dac: - platform: tas58xx with the one below.\n#    Keep your other audio_dac options (id, enable_pin, analog_gain, mixer_mode, ...).\n# 3. Flash, then press \"Reset Crossover to YAML\" so these values replace the ones saved\n#    on the device. Values set from Home Assistant are saved anyway; this makes them\n#    the YAML defaults so they survive a factory reset and can be copied to another cabinet.\n\nsubstitutions:\n  xo_filter: \"{{crossover_filter_code}}\"\n  xo_frequency: \"{{crossover_frequency}}Hz\"\n  xo_tweeter_min_frequency: \"{{tweeter_min_frequency}}Hz\"\n  xo_tweeter_gain: \"{{tweeter_gain}}dB\"\n  xo_mid_gain: \"{{mid_gain}}dB\"\n  xo_tweeter_invert: \"{{tweeter_invert}}\"\n  xo_mid_invert: \"{{mid_invert}}\"\n  xo_tweeter_delay: \"{{tweeter_delay}}\"\n  xo_mid_delay: \"{{mid_delay}}\"\n  xo_subsonic_frequency: \"{{subsonic_frequency}}Hz\"\n  xo_baffle_width: \"{{baffle_width}}\"\n  xo_baffle_placement: \"{{baffle_placement_code}}\"\n  xo_notch_frequency: \"{{tweeter_notch_frequency}}Hz\"\n  xo_notch_gain: \"{{tweeter_notch_gain}}dB\"\n  xo_notch_q: \"{{tweeter_notch_q}}\"\n  xo_air_gain: \"{{air_gain}}dB\"\n  xo_linkwitz_f0: \"{{linkwitz_f0}}Hz\"\n  xo_linkwitz_q0: \"{{linkwitz_q0}}\"\n  xo_linkwitz_fp: \"{{linkwitz_fp}}Hz\"\n  xo_linkwitz_qp: \"{{linkwitz_qp}}\"\n  xo_headroom_compensation: \"{{headroom_compensation}}\"\n  xo_loudness: \"{{loudness}}\"\n  xo_loudness_reference: \"{{loudness_reference}}dB\"\n  tweeter_peq_1_frequency: \"{{tweeter_peq_1_frequency}}Hz\"\n  tweeter_peq_1_gain: \"{{tweeter_peq_1_gain}}dB\"\n  tweeter_peq_1_q: \"{{tweeter_peq_1_q}}\"\n  tweeter_peq_1_type: \"{{tweeter_peq_1_type_code}}\"\n  tweeter_peq_2_frequency: \"{{tweeter_peq_2_frequency}}Hz\"\n  tweeter_peq_2_gain: \"{{tweeter_peq_2_gain}}dB\"\n  tweeter_peq_2_q: \"{{tweeter_peq_2_q}}\"\n  tweeter_peq_2_type: \"{{tweeter_peq_2_type_code}}\"\n  tweeter_peq_3_frequency: \"{{tweeter_peq_3_frequency}}Hz\"\n  tweeter_peq_3_gain: \"{{tweeter_peq_3_gain}}dB\"\n  tweeter_peq_3_q: \"{{tweeter_peq_3_q}}\"\n  tweeter_peq_3_type: \"{{tweeter_peq_3_type_code}}\"\n  tweeter_peq_4_frequency: \"{{tweeter_peq_4_frequency}}Hz\"\n  tweeter_peq_4_gain: \"{{tweeter_peq_4_gain}}dB\"\n  tweeter_peq_4_q: \"{{tweeter_peq_4_q}}\"\n  tweeter_peq_4_type: \"{{tweeter_peq_4_type_code}}\"\n  tweeter_peq_5_frequency: \"{{tweeter_peq_5_frequency}}Hz\"\n  tweeter_peq_5_gain: \"{{tweeter_peq_5_gain}}dB\"\n  tweeter_peq_5_q: \"{{tweeter_peq_5_q}}\"\n  tweeter_peq_5_type: \"{{tweeter_peq_5_type_code}}\"\n  tweeter_peq_6_frequency: \"{{tweeter_peq_6_frequency}}Hz\"\n  tweeter_peq_6_gain: \"{{tweeter_peq_6_gain}}dB\"\n  tweeter_peq_6_q: \"{{tweeter_peq_6_q}}\"\n  tweeter_peq_6_type: \"{{tweeter_peq_6_type_code}}\"\n  mid_peq_1_frequency: \"{{mid_peq_1_frequency}}Hz\"\n  mid_peq_1_gain: \"{{mid_peq_1_gain}}dB\"\n  mid_peq_1_q: \"{{mid_peq_1_q}}\"\n  mid_peq_1_type: \"{{mid_peq_1_type_code}}\"\n  mid_peq_2_frequency: \"{{mid_peq_2_frequency}}Hz\"\n  mid_peq_2_gain: \"{{mid_peq_2_gain}}dB\"\n  mid_peq_2_q: \"{{mid_peq_2_q}}\"\n  mid_peq_2_type: \"{{mid_peq_2_type_code}}\"\n  mid_peq_3_frequency: \"{{mid_peq_3_frequency}}Hz\"\n  mid_peq_3_gain: \"{{mid_peq_3_gain}}dB\"\n  mid_peq_3_q: \"{{mid_peq_3_q}}\"\n  mid_peq_3_type: \"{{mid_peq_3_type_code}}\"\n  mid_peq_4_frequency: \"{{mid_peq_4_frequency}}Hz\"\n  mid_peq_4_gain: \"{{mid_peq_4_gain}}dB\"\n  mid_peq_4_q: \"{{mid_peq_4_q}}\"\n  mid_peq_4_type: \"{{mid_peq_4_type_code}}\"\n  mid_peq_5_frequency: \"{{mid_peq_5_frequency}}Hz\"\n  mid_peq_5_gain: \"{{mid_peq_5_gain}}dB\"\n  mid_peq_5_q: \"{{mid_peq_5_q}}\"\n  mid_peq_5_type: \"{{mid_peq_5_type_code}}\"\n  mid_peq_6_frequency: \"{{mid_peq_6_frequency}}Hz\"\n  mid_peq_6_gain: \"{{mid_peq_6_gain}}dB\"\n  mid_peq_6_q: \"{{mid_peq_6_q}}\"\n  mid_peq_6_type: \"{{mid_peq_6_type_code}}\"\n\n# under audio_dac: - platform: tas58xx\n    crossover:\n      filter: ${xo_filter}\n      frequency: ${xo_frequency}\n      tweeter_min_frequency: ${xo_tweeter_min_frequency}\n      tweeter_channel: {{crossover_tweeter_channel_code}}\n      tweeter_gain: ${xo_tweeter_gain}\n      mid_gain: ${xo_mid_gain}\n      tweeter_invert: ${xo_tweeter_invert}\n      mid_invert: ${xo_mid_invert}\n      tweeter_delay: ${xo_tweeter_delay}\n      mid_delay: ${xo_mid_delay}\n      tweeter_peq:\n        - frequency: ${tweeter_peq_1_frequency}\n          gain: ${tweeter_peq_1_gain}\n          q: ${tweeter_peq_1_q}\n          type: ${tweeter_peq_1_type}\n        - frequency: ${tweeter_peq_2_frequency}\n          gain: ${tweeter_peq_2_gain}\n          q: ${tweeter_peq_2_q}\n          type: ${tweeter_peq_2_type}\n        - frequency: ${tweeter_peq_3_frequency}\n          gain: ${tweeter_peq_3_gain}\n          q: ${tweeter_peq_3_q}\n          type: ${tweeter_peq_3_type}\n        - frequency: ${tweeter_peq_4_frequency}\n          gain: ${tweeter_peq_4_gain}\n          q: ${tweeter_peq_4_q}\n          type: ${tweeter_peq_4_type}\n        - frequency: ${tweeter_peq_5_frequency}\n          gain: ${tweeter_peq_5_gain}\n          q: ${tweeter_peq_5_q}\n          type: ${tweeter_peq_5_type}\n        - frequency: ${tweeter_peq_6_frequency}\n          gain: ${tweeter_peq_6_gain}\n          q: ${tweeter_peq_6_q}\n          type: ${tweeter_peq_6_type}\n      mid_peq:\n        - frequency: ${mid_peq_1_frequency}\n          gain: ${mid_peq_1_gain}\n          q: ${mid_peq_1_q}\n          type: ${mid_peq_1_type}\n        - frequency: ${mid_peq_2_frequency}\n          gain: ${mid_peq_2_gain}\n          q: ${mid_peq_2_q}\n          type: ${mid_peq_2_type}\n        - frequency: ${mid_peq_3_frequency}\n          gain: ${mid_peq_3_gain}\n          q: ${mid_peq_3_q}\n          type: ${mid_peq_3_type}\n        - frequency: ${mid_peq_4_frequency}\n          gain: ${mid_peq_4_gain}\n          q: ${mid_peq_4_q}\n          type: ${mid_peq_4_type}\n        - frequency: ${mid_peq_5_frequency}\n          gain: ${mid_peq_5_gain}\n          q: ${mid_peq_5_q}\n          type: ${mid_peq_5_type}\n        - frequency: ${mid_peq_6_frequency}\n          gain: ${mid_peq_6_gain}\n          q: ${mid_peq_6_q}\n          type: ${mid_peq_6_type}\n      subsonic_frequency: ${xo_subsonic_frequency}\n      baffle_width: ${xo_baffle_width}\n      baffle_placement: ${xo_baffle_placement}\n      tweeter_notch:\n        frequency: ${xo_notch_frequency}\n        gain: ${xo_notch_gain}\n        q: ${xo_notch_q}\n      air_gain: ${xo_air_gain}\n      linkwitz:\n        f0: ${xo_linkwitz_f0}\n        q0: ${xo_linkwitz_q0}\n        fp: ${xo_linkwitz_fp}\n        qp: ${xo_linkwitz_qp}\n      headroom_compensation: ${xo_headroom_compensation}\n      loudness: ${xo_loudness}\n      loudness_reference: ${xo_loudness_reference}\n      dsp_sample_rate: {{dsp_sample_rate}}Hz\n"
+}

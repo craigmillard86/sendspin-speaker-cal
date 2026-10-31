@@ -93,3 +93,12 @@ test('stays within the bank sizes', () => {
   const result = fitPeq({ freqs, measuredDb: measured, targetDb: flat, fs: FS, rules: tierRules('calibrated'), banks, ranges });
   assert.ok(result.filters.length <= 3);
 });
+
+test('a deep narrow null is left alone even when the boost limit would make a wider filter fit', () => {
+  // -12 dB at Q 9: with boosts capped at +6 dB the best capped fit is a wider filter
+  const measured = responseDb([{ f: 800, gain: -12, q: 9 }], freqs, FS);
+  const result = fitPeq({ freqs, measuredDb: measured, targetDb: flat, fs: FS, rules: tierRules('calibrated'), banks: oneBank, ranges });
+  const near = result.filters.filter((f) => f.gain > 0 && Math.abs(Math.log2(f.f / 800)) < 1 / 6);
+  assert.deepEqual(near, [], 'no boost near the null');
+  assert.equal(result.rejected.length, 1);
+});

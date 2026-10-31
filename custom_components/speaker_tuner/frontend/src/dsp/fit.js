@@ -31,6 +31,8 @@ import { alignmentOffset, rmsDeviation } from './metrics.js';
  */
 
 const FLOOR_SPILL_DB = 1;
+// +-1/6 octave around a rejected null is kept free of boosts
+const NULL_ZONE_RATIO = Math.pow(2, 1 / 6);
 
 export const DEFAULT_Q_GRID = [0.5, 0.6, 0.7, 0.85, 1, 1.2, 1.4, 1.7, 2, 2.4, 2.8, 3.4, 4, 5, 6, 7, 8, 9, 10];
 
@@ -138,12 +140,16 @@ export function fitPeq(input) {
     for (const i of idx) out[i] = a[i] + sign * b[i];
     return out;
   };
+  /** frequency bands around rejected nulls where no boost may go */
+  /** @type {Array<[number, number]>} */
+  const noBoost = [];
+  const inNoBoost = (/** @type {number} */ f) => noBoost.some(([lo, hi]) => f >= lo && f <= hi);
   /** @param {{ f: number, gain: number, q: number }} p */
   const valid = (p) =>
     frequencyAllowed(p.f) &&
     p.gain >= gainMin && p.gain <= gainMax &&
     p.q >= qLo && p.q <= qHi &&
-    !(p.gain > 0 && (p.q > maxBoostQ || p.f < boostFloor));
+    !(p.gain > 0 && (p.q > maxBoostQ || p.f < boostFloor || inNoBoost(p.f)));
 
   /** @type {Array<{ bank: string, f: number, gain: number, q: number, resp: Float64Array }>} */
   const filters = [];
@@ -166,7 +172,7 @@ export function fitPeq(input) {
       if (!frequencyAllowed(f)) continue;
       const bank = /** @type {Bank} */ (bankFor(f));
       if (filters.filter((x) => x.bank === bank.id).length >= bank.maxFilters) continue;
-      if (r > 0 && (gainMax <= 0 || f < boostFloor)) continue;
+      if (r > 0 && (gainMax <= 0 || f < boostFloor || inNoBoost(f))) continue;
       if (r < 0 && gainMin >= 0) continue;
       pick = i;
       pickAbs = Math.abs(r);
@@ -176,19 +182,25 @@ export function fitPeq(input) {
     const f = freqs[pick];
     const boost = residual(pick, total) > 0;
     const before = cost(total);
-    let best = { q: 1, gain: 0, value: before, resp: new Float64Array(n) };
-    for (const q of qGrid) {
-      const { x: gain, value } = goldenMin(
-        (g) => cost(combine(total, shape(f, g, q))),
-        boost ? 0 : gainMin,
-        boost ? gainMax : 0,
-      );
-      if (value < best.value) best = { q, gain, value, resp: shape(f, gain, q) };
-    }
+    /** best filter at f over the Q grid with gains from lo to hi */
+    const search = (/** @type {number} */ lo, /** @type {number} */ hi) => {
+      let best = { q: 1, gain: 0, value: before, resp: new Float64Array(n) };
+      for (const q of qGrid) {
+        const { x: gain, value } = goldenMin((g) => cost(combine(total, shape(f, g, q))), lo, hi);
+        if (value < best.value) best = { q, gain, value, resp: shape(f, gain, q) };
+      }
+      return best;
+    };
+    // Judge a dip's width with the entity's full gain range: with the boost capped by the
+    // tier, a deep narrow null fits best with a wider filter and would slip past the Q check.
+    const shapeOfDip = boost ? search(0, Math.max(gainMax, ranges.gain.max)) : null;
+    const best = boost ? (shapeOfDip && shapeOfDip.q > maxBoostQ ? shapeOfDip : search(0, gainMax)) : search(gainMin, 0);
 
     if (best.gain > 0 && best.q > maxBoostQ) {
-      // a narrow dip that only a high-Q boost fits: most likely a room cancellation
+      // a narrow dip that only a high-Q boost fits: most likely a room cancellation.
+      // Leave the whole neighbourhood alone, or a later pass fills it at a slightly lower Q.
       rejected.push({ f, reason: 'narrow null, not boosted' });
+      noBoost.push([f / NULL_ZONE_RATIO, f * NULL_ZONE_RATIO]);
       banned.add(pick);
       continue;
     }
