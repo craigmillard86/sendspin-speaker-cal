@@ -9,6 +9,10 @@ import { fitSealedRolloff, f3Of, findTuningFrequency, suggestSubsonic } from '..
 import { detectBreakupPeak, suggestAirGain, suggestBaffleWidth } from '../dsp/compensation.js';
 import { targetDb } from '../dsp/target.js';
 import { fitToRange } from '../ha/entities.js';
+import { peaking, magnitudeDb } from '../dsp/biquad.js';
+
+/** A change must make the crossover region at least this much flatter to be suggested. */
+export const MIN_FLATNESS_GAIN_DB = 0.2;
 
 /**
  * @typedef {{ writer: import('../ha/dsp-writer.js').DspWriter, measurer: import('./session.js').Measurer,
@@ -117,14 +121,18 @@ export async function polarityTest(ctx, { always = false } = {}) {
 
 /**
  * Crossover scan: try each frequency (and filter type), score the sum, keep the flattest.
+ * The current setting is always measured too, and a change is only suggested when it is
+ * clearly flatter (MIN_FLATNESS_GAIN_DB), not on measurement noise.
  * Frequencies below the entity minimum (the YAML tweeter_min_frequency) are skipped.
  * @param {Ctx} ctx @param {number[]} frequencies @param {string[]} [filters] select options to try
  */
 export async function crossoverScan(ctx, frequencies, filters) {
   const range = ctx.writer.range('crossover_frequency');
-  const list = [...new Set(frequencies.map((f) => fitToRange(f, range)))];
   const skipped = frequencies.filter((f) => f < range.min || f > range.max);
-  const types = filters?.length ? filters : [ctx.writer.value('crossover_filter')];
+  const currentFrequency = crossoverHz(ctx);
+  const currentFilter = ctx.writer.value('crossover_filter');
+  const list = [...new Set([currentFrequency, ...frequencies.filter((f) => f >= range.min && f <= range.max).map((f) => fitToRange(f, range))])];
+  const types = filters?.length ? filters : [currentFilter];
   const results = [];
   for (const filter of types) {
     for (const f of list) {
@@ -135,10 +143,15 @@ export async function crossoverScan(ctx, frequencies, filters) {
   }
   results.sort((a, b) => a.flatnessDb - b.flatnessDb);
   const best = results[0];
+  const current = results.find((r) => r.frequency === currentFrequency && (!filters?.length || r.filter === currentFilter));
+  const worthIt = best && current && best !== current && best.flatnessDb <= current.flatnessDb - MIN_FLATNESS_GAIN_DB;
   return {
     results,
     skipped,
-    suggestion: best ? { crossover_frequency: best.frequency, ...(filters?.length ? { crossover_filter: best.filter } : {}) } : {},
+    current,
+    suggestion: worthIt
+      ? { ...(best.frequency !== currentFrequency ? { crossover_frequency: best.frequency } : {}), ...(filters?.length && best.filter !== currentFilter ? { crossover_filter: best.filter } : {}) }
+      : {},
   };
 }
 
@@ -253,14 +266,17 @@ export function baffleSuggestion(curve) {
  * Tweeter breakup notch (from tweeter alone) and air shelf (from the full response).
  * Calibrated mics only: nobody can judge 10 kHz and up with an unknown mic.
  * @param {{ freqs: number[], db: number[] }} tweeterCurve @param {{ freqs: number[], db: number[] }} fullCurve
- * @param {import('../dsp/target.js').Target} target @param {string} tier
+ * @param {import('../dsp/target.js').Target} target @param {string} tier @param {number} [fs] DSP sample rate
  */
-export function notchAndAir(tweeterCurve, fullCurve, target, tier) {
+export function notchAndAir(tweeterCurve, fullCurve, target, tier, fs = 96000) {
   if (tier !== 'calibrated') return { allowed: false, suggestion: {} };
   const t = fitView(normalised(tweeterCurve));
   const f = fitView(normalised(fullCurve));
   const notch = detectBreakupPeak(t.freqs, t.db);
-  const air = suggestAirGain(f.freqs, f.db, targetDb(target, f.freqs));
+  // judge the air shelf on the response as it will be once the notch is in, or the
+  // breakup peak gets cut twice
+  const notched = notch ? f.db.map((d, i) => d + magnitudeDb(peaking(notch.frequency, notch.gainDb, notch.q, fs), f.freqs[i], fs)) : f.db;
+  const air = suggestAirGain(f.freqs, notched, targetDb(target, f.freqs));
   /** @type {Record<string, number>} */
   const suggestion = { air_gain: air };
   if (notch) Object.assign(suggestion, { tweeter_notch_frequency: notch.frequency, tweeter_notch_gain: notch.gainDb, tweeter_notch_q: notch.q });

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Speaker Tuner</title>
+  <link rel="stylesheet" href="app.css">
+  <style>
+    html, body { margin: 0; height: 100%; background: #f4f3f0; }
+    @media (prefers-color-scheme: dark) { html, body { background: #121211; } }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <noscript>Speaker Tuner needs JavaScript.</noscript>
+  <script type="module">
+    // Standalone page: log in with a long-lived token (or try the demo).
+    // The Home Assistant sidebar panel (panel.js) is the easier way in.
+    import { TunerApp } from './src/ui/app.js';
+    const app = new TunerApp(document.getElementById('app'), { mode: 'standalone' });
+    app.start().then(() => {
+      // index.html?demo=1 opens straight into demo mode
+      if (new URLSearchParams(location.search).has('demo')) return app.startDemo();
+    }).catch((e) => {
+      document.getElementById('app').textContent = `Speaker Tuner failed to start: ${e.message}`;
+      console.error(e);
+    });
+  </script>
+</body>
+</html>

@@ -1,11 +1,12 @@
 // @ts-check
 // Apply, re-measure, refine: write the fitted values, measure again the same way as the
 // baseline, and repeat up to maxIterations while each pass still gains at least
-// minImprovementDb of RMS deviation.
+// minImprovementDb of RMS deviation. A pass that makes things worse is undone, so the
+// speaker is left on the best result.
 
 /**
  * @typedef {{ iteration: number, changes: Record<string, any>, report: import('../ha/dsp-writer.js').WriteReport,
- *   curve: { freqs: number[], db: number[] } | null, rms: number | null, predictedRms: number }} RefineStep
+ *   curve: { freqs: number[], db: number[] } | null, rms: number | null, predictedRms: number, undone?: boolean }} RefineStep
  */
 
 /**
@@ -30,6 +31,7 @@ export async function applyAndRefine({ writer, baseline, plan, measure, rmsOf, m
   for (let iteration = 1; iteration <= maxIterations; iteration++) {
     const { changes, rmsAfter } = plan(curve);
     onStatus?.(`Pass ${iteration}: writing ${Object.keys(changes).length} values`);
+    const previous = writer.snapshot(Object.keys(changes));
     const report = await writer.write(changes, { signal });
     /** @type {RefineStep} */
     const step = { iteration, changes, report, curve: null, rms: null, predictedRms: rmsAfter };
@@ -45,10 +47,17 @@ export async function applyAndRefine({ writer, baseline, plan, measure, rmsOf, m
     step.rms = rmsOf(next);
     onStep?.(step);
     const improvement = rms - step.rms;
+    if (improvement < 0) {
+      onStatus?.(`Pass ${iteration} made it worse: putting the previous values back`);
+      const undo = await writer.write(previous, { signal });
+      step.undone = undo.ok;
+      reason = undo.ok ? `pass ${iteration} made it worse and was undone` : `pass ${iteration} made it worse and could not be undone`;
+      break;
+    }
     curve = next;
     rms = step.rms;
     if (improvement < minImprovementDb) {
-      reason = improvement < 0 ? 'got worse' : 'improvement under threshold';
+      reason = 'improvement under threshold';
       break;
     }
   }

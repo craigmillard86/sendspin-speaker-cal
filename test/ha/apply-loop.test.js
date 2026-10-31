@@ -149,3 +149,27 @@ test('token transport: auth, results and events over a WebSocket', async () => {
   assert.equal(writer.value('mid_gain'), -2);
   await assert.rejects(api.callService('select', 'select_option', { option: 'Nope' }, { entity_id: mock.entityFor.crossover_filter }), /not valid/);
 });
+
+test('a pass that makes things worse is undone, leaving the best values', async () => {
+  const values = { mid_peq_1_gain: 0 };
+  const writer = {
+    snapshot: (keys) => Object.fromEntries(keys.map((k) => [k, values[k]])),
+    write: async (changes) => {
+      Object.assign(values, changes);
+      return { ok: true, written: Object.keys(changes), unchanged: [], failed: [], remaining: [], skipped: [], stopped: false };
+    },
+  };
+  // pass 1 gets better (5 -> 3), pass 2 gets worse (3 -> 3.4)
+  const rmsByGain = { 0: 5, '-3': 3, '-6': 3.4 };
+  let pass = 0;
+  const result = await applyAndRefine({
+    writer, baseline: { gain: 0 }, rmsOf: (c) => rmsByGain[c.gain],
+    plan: () => ({ changes: { mid_peq_1_gain: ++pass === 1 ? -3 : -6 }, rmsAfter: 0 }),
+    measure: async () => ({ gain: values.mid_peq_1_gain }),
+  });
+  assert.equal(result.steps.length, 2);
+  assert.equal(result.steps[1].undone, true);
+  assert.equal(values.mid_peq_1_gain, -3, 'back on the pass 1 values');
+  assert.equal(result.finalRms, 3);
+  assert.match(result.reason, /pass 2 made it worse and was undone/);
+});

@@ -62,10 +62,14 @@ test('polarity: LR4 is kept as is, LR2 asks for the tweeter to be inverted', asy
 
 test('crossover scan skips frequencies below the tweeter minimum and restores the setting', async () => {
   const { writer, ctx, unchanged } = await rig();
-  const r = await crossoverScan(ctx, [100, 2000, 2500, 3000]);
+  const r = await crossoverScan(ctx, [100, 2000, 3000]);
   assert.deepEqual(r.skipped, [100]);
-  assert.ok([500, 2000, 2500, 3000].includes(r.suggestion.crossover_frequency));
+  assert.deepEqual(r.results.map((x) => x.frequency).sort(), [2000, 2500, 3000], 'the current 2500 Hz is always measured');
   assert.ok(r.results.every((x) => Number.isFinite(x.flatnessDb)));
+  if (r.suggestion.crossover_frequency) {
+    const best = r.results.find((x) => x.frequency === r.suggestion.crossover_frequency);
+    assert.ok(best.flatnessDb <= r.current.flatnessDb - 0.2, 'only a clear improvement is suggested');
+  }
   assert.equal(writer.value('crossover_frequency'), 2500);
   unchanged();
 });
@@ -102,4 +106,8 @@ test('notch and air are only offered with a calibrated mic, and find the breakup
   assert.ok(r.notch, 'breakup peak found');
   assert.ok(Math.abs(r.notch.frequency - 14000) / 14000 < 0.05, `notch ${r.notch.frequency} Hz`);
   assert.ok(r.suggestion.tweeter_notch_gain < 0);
+  // the breakup peak is the notch's job; the air shelf must not cut it a second time
+  const noNotch = notchAndAir(t.curve, f.curve, FLAT, 'calibrated');
+  assert.ok(Math.abs(r.air) <= 3, `air ${r.air} dB`);
+  assert.equal(noNotch.air, r.air);
 });
