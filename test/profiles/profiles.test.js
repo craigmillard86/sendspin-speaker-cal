@@ -11,12 +11,14 @@ import { STORE_GRID } from '../../custom_components/speaker_tuner/frontend/src/d
 const FRONT = new URL('../../custom_components/speaker_tuner/frontend/', import.meta.url);
 const json = (p) => JSON.parse(readFileSync(new URL(p, FRONT), 'utf8'));
 const files = (dir) => readdirSync(new URL(dir, FRONT)).filter((f) => f.endsWith('.json')).map((f) => `${dir}/${f}`);
+// shipped and contributed profiles are held to the same checks
+const profileFiles = () => [...files('profiles'), ...files('profiles/contrib')];
 const louder = json('profiles/louder-tas5805m-crossover.json');
 
 for (const [dir, schema] of [['profiles', 'schema/profile.schema.json'], ['mics', 'schema/mic.schema.json'], ['targets', 'schema/target.schema.json']]) {
   test(`shipped ${dir} match ${schema}`, () => {
     const s = json(schema);
-    const list = files(dir);
+    const list = dir === 'profiles' ? profileFiles() : files(dir);
     assert.ok(list.length > 0);
     for (const f of list) assert.deepEqual(validate(s, json(f)), [], f);
   });
@@ -70,7 +72,7 @@ test('graphic profile: the right channel mirrors the left', () => {
 });
 
 test('every profile template renders with default values', () => {
-  for (const f of files('profiles')) {
+  for (const f of profileFiles()) {
     const p = json(f);
     const values = templateValues(p, {});
     assert.doesNotThrow(() => render(p.yaml_template, values), f);
