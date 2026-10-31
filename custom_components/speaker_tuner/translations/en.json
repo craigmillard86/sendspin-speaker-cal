@@ -1,0 +1,13 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Speaker Tuner",
+        "description": "Adds a Speaker Tuner panel to the sidebar for administrators. It measures an ESPHome speaker with a microphone and tunes its EQ and crossover."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Speaker Tuner is already added."
+    }
+  }
+}
