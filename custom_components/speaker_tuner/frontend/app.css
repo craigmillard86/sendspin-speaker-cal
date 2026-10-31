@@ -107,6 +107,10 @@
   font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --chart-font: system-ui, sans-serif;
 }
+/* the hidden attribute always wins: classes below set display (e.g. .notice is flex), which
+   would otherwise show elements the app has hidden */
+.page [hidden] { display: none !important; }
+
 /* set, not inherited: <details> content inherits through the browser's own slot, which is content-box */
 .page *, .page *::before, .page *::after { box-sizing: border-box; }
 
