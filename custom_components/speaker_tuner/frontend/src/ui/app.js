@@ -24,6 +24,31 @@ import { renderMeasure } from './section-measure.js';
 import { renderTune } from './section-tune.js';
 import { renderSettings } from './section-settings.js';
 import { renderExport } from './section-export.js';
+import { renderReady } from './section-ready.js';
+
+/** The four steps and the cards each one shows. */
+export const STEPS = [
+  { id: 'setup', label: 'Set up', sections: ['ready', 'connect', 'speaker', 'mic'] },
+  { id: 'measure', label: 'Measure', sections: ['measure'] },
+  { id: 'tune', label: 'Tune', sections: ['tune'] },
+  { id: 'save', label: 'Save', sections: ['export'] },
+];
+
+/** @type {TunerApp | null} the app on the page; card() reads its messages */
+let currentApp = null;
+
+/** @param {string} s */
+const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
+/**
+ * Split a message into a short headline and the rest, so a long sentence doesn't become a
+ * wall of text: "Level set: volume 25 %. Every measurement ..." -> headline + detail.
+ * @param {string} text
+ */
+export function splitMessage(text) {
+  const m = text.match(/^(.{8,90}?[.:!?])\s+(.+)$/s);
+  return m ? { h: m[1].replace(/[.:]$/, ''), d: m[2] } : { h: text, d: '' };
+}
 
 const ASSETS = new URL('../../', import.meta.url);
 export const SHIPPED = {
@@ -64,6 +89,7 @@ export class TunerApp {
       positions: 3,
       checkPositions: 1,
       crossoverList: '2000, 2500, 3000',
+      step: '',
       ...store.load('settings', {}),
     };
     /** @type {{ freqs: number[], db: number[] } | null} */
@@ -98,9 +124,28 @@ export class TunerApp {
     this.restoreLoudness = false;
     /** @type {Record<string, (app: TunerApp) => HTMLElement>} */
     this.renderers = {
-      connect: renderConnect, speaker: renderSpeaker, mic: renderMic, measure: renderMeasure,
+      connect: renderConnect, ready: renderReady, speaker: renderSpeaker, mic: renderMic, measure: renderMeasure,
       tune: renderTune, settings: renderSettings, export: renderExport,
     };
+    /** the step on screen */
+    this.step = /** @type {string} */ (this.settings.step ?? '');
+    /**
+     * Messages shown inside the card they belong to, by card ("where").
+     * @type {Record<string, Array<{ kind: string, h: string, d: string, action?: { label: string, fn: () => void } }>>}
+     */
+    this.feedback = {};
+    /** @type {Array<{ kind: string, text: string, time: string }>} everything said this session */
+    this.history = [];
+    /** @type {Map<string, { kind: string, text: string, action?: { label: string, fn: () => void } }>} device-level problems */
+    this.alerts = new Map();
+    /** the card the running task belongs to, and the last card the user clicked in */
+    this.taskWhere = /** @type {string | null} */ (null);
+    this.lastWhere = /** @type {string | null} */ (null);
+    this.lastWhereAt = 0;
+    /** @type {'settings' | 'messages' | null} */
+    this.drawer = null;
+    this.chartSmall = false;
+    currentApp = this;
   }
 
   // ---------- startup ----------
@@ -122,7 +167,7 @@ export class TunerApp {
       await this.connected();
     } catch (e) {
       this.api = null;
-      this.notify(`Could not reconnect to ${saved.url}: ${/** @type {Error} */ (e).message}`, 'warn');
+      this.alert('reconnect', 'warn', `Could not reconnect to ${saved.url}. ${/** @type {Error} */ (e).message}`, { label: 'Open Set up', fn: () => this.goStep('setup') });
     }
   }
 
@@ -141,11 +186,14 @@ export class TunerApp {
     const api = this.api;
     api?.onClose(() => {
       if (this.api !== api) return;
-      this.notify('The connection to Home Assistant was lost. Anything in progress stopped; reconnect and check the settings.', 'error');
+      this.alert('connection', 'error', 'Lost the connection to Home Assistant. Anything in progress stopped; settings already written are kept.', this.mode === 'standalone' ? { label: 'Reconnect', fn: () => this.reconnect().then(() => this.refresh()) } : undefined);
       this.abort?.abort('disconnected');
     });
     api?.onReconnect(() => {
-      if (this.api === api) this.writer?.reload().then(() => this.checkMutes()).catch(() => {});
+      if (this.api !== api) return;
+      this.clearAlert('connection');
+      this.toast('Reconnected to Home Assistant.');
+      this.writer?.reload().then(() => this.checkMutes()).catch(() => {});
     });
     if (this.mapping) await this.useMapping(this.mapping.id);
   }
@@ -158,13 +206,17 @@ export class TunerApp {
     const w = this.writer;
     if (!w || this.busy) return;
     const on = ['tweeter_mute', 'mid_mute'].filter((r) => w.value(r) === true);
-    if (!on.length) return;
-    const fix = h('button', { onclick: async () => {
-      const r = await w.write({ tweeter_mute: false, mid_mute: false });
-      this.notify(r.ok ? 'Both drivers unmuted.' : `Could not unmute: ${r.failed[0]?.error ?? 'stopped'}`, r.ok ? 'ok' : 'error');
-      notice?.remove();
-    } }, 'Unmute both drivers');
-    const notice = this.notify(`${on.map((r) => (r === 'tweeter_mute' ? 'The tweeter' : 'The mid/bass')).join(' and ')} ${on.length > 1 ? 'are' : 'is'} muted. A measurement may have been interrupted.`, 'warn', fix);
+    if (!on.length) return this.clearAlert('mute');
+    this.alert('mute', 'warn', `${on.map((r) => (r === 'tweeter_mute' ? 'The tweeter' : 'The mid/bass')).join(' and ')} ${on.length > 1 ? 'are' : 'is'} muted. A measurement may have been interrupted before it could unmute.`, {
+      label: 'Unmute',
+      fn: async () => {
+        const r = await w.write({ tweeter_mute: false, mid_mute: false });
+        if (r.ok) {
+          this.clearAlert('mute');
+          this.toast('Both drivers unmuted.');
+        } else this.alert('mute', 'error', `Could not unmute: ${r.failed[0]?.error ?? 'stopped'}`);
+      },
+    });
   }
 
   /** Demo: an in-memory HA with a simulated speaker. */
@@ -182,7 +234,8 @@ export class TunerApp {
     this.visible.clear();
     this.session = null;
     await this.useMapping('demo');
-    this.notify('Demo mode: a simulated two-way speaker with passive radiators in a simulated room. Nothing is sent to a real device, and nothing is saved.', 'info');
+    this.toast('Demo mode: a simulated speaker in a simulated room. Nothing is sent to a real device.');
+    this.step = 'measure';
     this.refresh();
   }
 
@@ -233,7 +286,7 @@ export class TunerApp {
     const real = kept.filter((m) => !m.test);
     const dropReal = new Set(real.slice(0, Math.max(0, real.length - 150)).map((m) => m.id));
     const toSave = kept.filter((m) => !dropReal.has(m.id));
-    if (!store.saveMeasurements(toSave)) this.notify('This browser would not save the measurements (storage full or blocked). Export them as JSON to keep them.', 'warn');
+    if (!store.saveMeasurements(toSave)) this.alert('storage', 'warn', 'This browser would not save the measurements (storage full or blocked). Export them as JSON to keep them.');
     store.save('visible', [...this.visible]);
   }
 
@@ -382,12 +435,17 @@ export class TunerApp {
   // ---------- running tasks ----------
 
   /**
-   * Run a long task: one at a time, with a Stop button, wake lock, and errors shown.
+   * Run a long task: one at a time, in the activity bar with Stop, wake lock on. What it says
+   * (results, errors) appears in the card it was started from.
    * @param {string} label @param {(signal: AbortSignal) => Promise<void>} task
+   * @param {string} [where] the card it belongs to; by default the one the user clicked in
    */
-  async run(label, task) {
-    if (this.busy) return this.notify(`Wait for "${this.busy}" to finish, or press Stop.`, 'warn');
+  async run(label, task, where) {
+    if (this.busy) return this.toast(`Wait for "${this.busy}" to finish, or press Stop.`);
     this.busy = label;
+    this.taskWhere = where ?? this.recentWhere() ?? 'global';
+    delete this.feedback[this.taskWhere];
+    this.renderFeedback(this.taskWhere);
     this.abort = new AbortController();
     this.status(label);
     this.refresh();
@@ -409,39 +467,192 @@ export class TunerApp {
       if (this.restoreLoudness && this.writer) {
         this.restoreLoudness = false;
         const r = await this.writer.write({ loudness: true }).catch((/** @type {Error} */ e) => ({ ok: false, failed: [{ error: e.message }] }));
-        if (!r.ok) this.notify(`Loudness was switched off for measuring and could not be switched back on: ${r.failed[0]?.error ?? 'stopped'}. Turn it on in Speaker settings.`, 'error');
+        if (!r.ok) this.alert('loudness', 'error', `Loudness was switched off for measuring and could not be switched back on (${r.failed[0]?.error ?? 'stopped'}). Turn it on in All settings.`, { label: 'All settings', fn: () => this.openDrawer('settings') });
       }
       this.busy = '';
       this.abort = null;
       this.task = null;
+      this.taskWhere = null;
       this.status('');
       this.refresh();
     }
   }
 
-  /** @param {string} text */
+  /** Activity bar: what is running now, with Stop. @param {string} text */
   status(text) {
-    const bar = this.el?.status;
+    const bar = this.el?.activity;
     if (!bar) return;
-    bar.hidden = !text && !this.busy;
-    bar.querySelector('.status-text').textContent = text || this.busy;
+    bar.hidden = !this.busy;
+    this.el.page.classList.toggle('busy', !!this.busy);
+    this.el.actTitle.textContent = this.busy;
+    this.el.actDetail.textContent = text && text !== this.busy ? text : '';
+    this.el.actMeter.hidden = !(this.busy && this.recorder);
+    if (this.busy && this.recorder && !this.meterOn) this.runActivityMeter();
+  }
+
+  /** The mic level in the activity bar, so you can see the mic hears the noise. */
+  runActivityMeter() {
+    this.meterOn = true;
+    const tick = () => {
+      if (!this.busy || !this.recorder) {
+        this.meterOn = false;
+        return;
+      }
+      const { rmsDbfs, peakDbfs, silent } = this.recorder.level();
+      const pct = silent ? 0 : Math.max(0, Math.min(100, ((rmsDbfs + 80) / 80) * 100));
+      this.el.actLevel.style.width = `${pct}%`;
+      this.el.actLevelText.textContent = silent ? 'silent' : peakDbfs > -3 ? 'too loud' : rmsDbfs < -60 ? 'quiet' : 'hearing';
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
+
+  /** The card the user last clicked in, if that was recent. */
+  recentWhere() {
+    return Date.now() - this.lastWhereAt < 60000 ? this.lastWhere : null;
   }
 
   /**
-   * @param {string} text @param {'info' | 'warn' | 'error' | 'ok'} [kind] @param {HTMLElement} [action] a button to show
-   * @returns {HTMLElement | undefined}
+   * Say something. Inside a task, or right after a click, it appears in that card; otherwise
+   * successes are a short toast and problems go to the alert strip.
+   * @param {string} text @param {'info' | 'warn' | 'error' | 'ok'} [kind]
+   * @param {{ label: string, fn: () => void }} [action]
    */
   notify(text, kind = 'info', action) {
-    const list = this.el?.notices;
-    if (!list) return undefined;
-    const n = h('div', { class: `notice notice-${kind}`, role: kind === 'error' ? 'alert' : 'status' },
-      h('span', { class: 'notice-icon', 'aria-hidden': 'true' }, { info: 'i', warn: '!', error: '×', ok: '✓' }[kind]),
-      h('span', { class: 'notice-text' }, text),
-      action ?? null,
-      h('button', { class: 'link', onclick: () => n.remove(), 'aria-label': 'Dismiss' }, 'Dismiss'));
-    list.append(n);
-    if ((kind === 'ok' || kind === 'info') && !action) setTimeout(() => n.remove(), 12000);
-    return n;
+    const where = this.taskWhere ?? this.recentWhere();
+    if (where && where !== 'global') return this.say(where, kind, text, action);
+    if (kind === 'ok' || kind === 'info') return this.toast(text);
+    return this.alert(`msg-${Date.now()}`, kind, text, action);
+  }
+
+  /**
+   * A message inside a card, under the button that caused it.
+   * @param {string} where @param {string} kind @param {string} text @param {{ label: string, fn: () => void }} [action]
+   */
+  say(where, kind, text, action) {
+    const { h: head, d } = splitMessage(text);
+    const list = (this.feedback[where] ??= []);
+    list.push({ kind, h: head, d, action });
+    if (list.length > 3) list.shift();
+    this.log(kind, text);
+    this.renderFeedback(where);
+  }
+
+  /** A short message that goes away by itself (background events, small confirmations). @param {string} text */
+  toast(text) {
+    this.log('ok', text);
+    const t = h('div', { class: 'toast', role: 'status' }, text);
+    this.el?.toasts.append(t);
+    setTimeout(() => t.remove(), 5000);
+  }
+
+  /**
+   * A device-level problem in the strip under the steps, until it is resolved or dismissed.
+   * @param {string} id @param {string} kind @param {string} text @param {{ label: string, fn: () => void }} [action]
+   */
+  alert(id, kind, text, action) {
+    this.alerts.set(id, { kind, text, action });
+    this.log(kind, text);
+    this.renderAlerts();
+  }
+
+  /** @param {string} id */
+  clearAlert(id) {
+    if (this.alerts.delete(id)) this.renderAlerts();
+  }
+
+  /** @param {string} kind @param {string} text */
+  log(kind, text) {
+    this.history.unshift({ kind, text, time: new Date().toLocaleTimeString() });
+    if (this.history.length > 100) this.history.pop();
+    if (this.el?.msgCount) this.el.msgCount.textContent = String(this.history.length);
+    if (this.drawer === 'messages') this.renderDrawer();
+  }
+
+  /** The message boxes of one card. @param {string} where */
+  feedbackNodes(where) {
+    const icon = { ok: '✓', info: 'i', warn: '!', error: '×' };
+    return (this.feedback[where] ?? []).map((m) =>
+      h('div', { class: `result result-${m.kind === 'error' ? 'err' : m.kind}`, role: m.kind === 'error' ? 'alert' : 'status' },
+        h('span', { class: 'result-mark', 'aria-hidden': 'true' }, /** @type {any} */ (icon)[m.kind] ?? 'i'),
+        h('span', { class: 'result-h' }, m.h),
+        m.d ? h('span', { class: 'result-d' }, m.d) : null,
+        h('span', { class: 'result-acts' },
+          m.action ? h('button', { class: 'pill-btn', onclick: () => m.action?.fn() }, m.action.label) : null,
+          h('button', { class: 'link', onclick: () => {
+            this.feedback[where] = (this.feedback[where] ?? []).filter((x) => x !== m);
+            this.renderFeedback(where);
+          } }, 'Dismiss'))));
+  }
+
+  /** Put a card's messages on screen without re-rendering the card. @param {string} where */
+  renderFeedback(where) {
+    for (const box of this.root.querySelectorAll(`.feedback[data-for="${where}"]`)) box.replaceChildren(...this.feedbackNodes(where));
+  }
+
+  renderAlerts() {
+    if (!this.el) return;
+    const icon = { warn: '!', error: '×', info: 'i', ok: '✓' };
+    this.el.alerts.replaceChildren(...[...this.alerts.entries()].map(([id, a]) =>
+      h('div', { class: `alert alert-${a.kind === 'error' ? 'err' : a.kind}`, role: a.kind === 'error' ? 'alert' : 'status' },
+        h('span', { class: 'result-mark', 'aria-hidden': 'true' }, /** @type {any} */ (icon)[a.kind] ?? '!'),
+        h('span', { class: 'alert-text' }, a.text),
+        a.action ? h('button', { class: 'pill-btn', onclick: () => a.action?.fn() }, a.action.label) : null,
+        h('button', { class: 'link', onclick: () => this.clearAlert(id) }, 'Dismiss'))));
+  }
+
+  /** @param {'settings' | 'messages' | null} which */
+  openDrawer(which) {
+    this.drawer = which;
+    this.renderDrawer();
+  }
+
+  renderDrawer() {
+    const d = this.el.drawer;
+    d.hidden = !this.drawer;
+    this.el.scrim.hidden = !this.drawer;
+    if (!this.drawer) return;
+    const close = h('button', { class: 'link', onclick: () => this.openDrawer(null) }, 'Close');
+    if (this.drawer === 'messages') {
+      const icon = { ok: '✓', info: 'i', warn: '!', error: '×' };
+      d.replaceChildren(h('header', { class: 'drawer-head' }, h('h2', null, 'Messages'), h('span', { class: 'spacer' }), close),
+        this.history.length
+          ? h('ol', { class: 'history' }, this.history.map((m) => h('li', { class: `hist-${m.kind}` },
+            h('span', { class: 'result-mark', 'aria-hidden': 'true' }, /** @type {any} */ (icon)[m.kind] ?? 'i'),
+            h('span', null, m.text), h('time', null, m.time))))
+          : h('p', { class: 'muted drawer-empty' }, 'Nothing yet.'));
+    } else {
+      d.replaceChildren(h('header', { class: 'drawer-head' }, h('h2', null, 'All settings'), h('span', { class: 'spacer' }), close),
+        h('div', { class: 'drawer-body', 'data-where': 'settings' }, this.renderers.settings(this)));
+    }
+    /** @type {HTMLElement | null} */ (close).focus();
+  }
+
+  /** @param {string} id */
+  goStep(id) {
+    this.step = id;
+    this.settings.step = id;
+    this.persist();
+    for (const el of Object.values(this.sections)) el.remove();
+    this.sections = {};
+    this.refresh();
+    this.el.page.scrollIntoView?.({ block: 'start' });
+  }
+
+  /** The step to show: the saved one, else Set up until a speaker exists, else Measure. */
+  currentStep() {
+    if (STEPS.some((st) => st.id === this.step)) return this.step;
+    return this.mapping && this.api ? 'measure' : 'setup';
+  }
+
+  /** Which steps are complete, for the step control. */
+  stepDone() {
+    return {
+      setup: !!(this.api && this.writer && (this.demo || (this.recorder && this.mapping?.media_url))),
+      measure: this.measurements.some((m) => m.kind === 'full' && !m.test),
+      tune: !!this.session && this.measurements.some((m) => m.kind === 'full' && m.label.startsWith('After pass') && !m.undone),
+      save: false,
+    };
   }
 
   /**
@@ -484,6 +695,7 @@ export class TunerApp {
             h('button', { class: 'primary', onclick: () => { close(); resolve(undefined); } }, ok),
             h('button', { onclick: cancel }, 'Cancel'))));
       this.el.page.append(dialog);
+      this.log('info', `${title}: ${text}`);
       /** @type {HTMLElement | null} */ (dialog.querySelector('button.primary'))?.focus();
     });
   }
@@ -532,15 +744,14 @@ export class TunerApp {
         h('span', { class: `swatch ${s.role === 'target' ? 'swatch-target' : s.role === 'predicted' ? 'swatch-predicted' : ''}`, style: s.role === 'target' ? '' : `background: var(--series-${((s.slot ?? 0) % 8) + 1})` }),
         s.label)));
     if (!series.length) legend.append(h('span', { class: 'muted' }, 'No measurements shown yet.'));
-    const tableBtn = h('button', { class: 'link', onclick: () => this.toggleTable(series) }, this.el.table.hidden ? 'Table view' : 'Hide table');
-    legend.append(tableBtn);
+    this.shownSeries = series;
     if (!this.el.table.hidden) this.fillTable(series);
   }
 
-  /** @param {import('./chart.js').Series[]} series */
-  toggleTable(series) {
+  toggleTable() {
     this.el.table.hidden = !this.el.table.hidden;
-    this.renderLegend(series);
+    if (!this.el.table.hidden) this.fillTable(this.shownSeries ?? []);
+    this.renderHeader();
   }
 
   /** @param {import('./chart.js').Series[]} series */
@@ -560,59 +771,152 @@ export class TunerApp {
   layout() {
     const canvas = /** @type {HTMLCanvasElement} */ (h('canvas', { class: 'chart-canvas', 'aria-label': 'Frequency response chart' }));
     const tooltip = h('div', { class: 'tooltip', hidden: true });
-    const stop = h('button', { class: 'danger', onclick: () => this.abort?.abort('stopped') }, 'Stop');
     this.el = {
       page: h('div', { class: 'page' }),
-      notices: h('div', { class: 'notices', 'aria-live': 'polite' }),
-      status: h('div', { class: 'statusbar', hidden: true }, h('span', { class: 'spinner', 'aria-hidden': 'true' }), h('span', { class: 'status-text' }), stop),
+      header: h('div', { class: 'header' }),
+      steps: h('nav', { class: 'steps', 'aria-label': 'Steps' }),
+      alerts: h('div', { class: 'alerts' }),
       legend: h('div', { class: 'legend' }),
+      chartTools: h('div', { class: 'chart-tools' }),
       table: h('div', { class: 'table-view', hidden: true }),
-      sections: h('div', { class: 'sections' }),
+      sections: h('main', { class: 'sections' }),
+      toasts: h('div', { class: 'toasts', 'aria-live': 'polite' }),
+      actTitle: h('b'),
+      actDetail: h('span'),
+      actLevel: h('i'),
+      actLevelText: h('span', { class: 'act-level-text' }),
+      msgCount: h('span', { class: 'badge' }, '0'),
+      drawer: h('aside', { class: 'drawer', hidden: true }),
+      scrim: h('div', { class: 'scrim', hidden: true, onclick: () => this.openDrawer(null) }),
     };
-    const header = h('header', { class: 'top' },
-      h('h1', null, 'Speaker Tuner'),
-      h('span', { class: 'muted' }, `v${VERSION}`),
-      h('span', { class: 'spacer' }),
-      h('span', { class: 'conn' }));
-    this.el.header = header;
+    this.el.actMeter = h('div', { class: 'act-meter', hidden: true }, h('span', null, 'Mic'), h('span', { class: 'act-track' }, this.el.actLevel), this.el.actLevelText);
+    this.el.activity = h('div', { class: 'activity', hidden: true },
+      h('div', { class: 'activity-inner' },
+        h('span', { class: 'act-spin', 'aria-hidden': 'true' }),
+        h('div', { class: 'act-what' }, this.el.actTitle, this.el.actDetail, this.el.actMeter),
+        h('button', { class: 'act-stop', 'aria-label': 'Stop', title: 'Stop', onclick: () => {
+          this.abort?.abort('stopped');
+          this.el.actDetail.textContent = 'Stopping, putting settings back…';
+        } }),
+        h('span', { class: 'act-progress', 'aria-hidden': 'true' })));
     this.el.page.append(
-      header,
-      h('section', { class: 'card chart-card' }, h('div', { class: 'chart-wrap' }, canvas, tooltip), this.el.legend, this.el.table),
-      this.el.status,
-      this.el.notices,
+      h('div', { class: 'top' }, this.el.header, this.el.steps, this.el.alerts),
+      h('section', { class: 'chart-card' },
+        h('div', { class: 'chart-head' }, this.el.legend, h('span', { class: 'spacer' }), this.el.chartTools),
+        h('div', { class: 'chart-wrap' }, canvas, tooltip), this.el.table),
       this.el.sections,
+      this.el.toasts,
+      this.el.activity,
+      this.el.scrim,
+      this.el.drawer,
     );
+    // remember which card the user is working in: messages from what they start go there
+    this.el.page.addEventListener('click', (e) => {
+      const el = /** @type {HTMLElement | null} */ (e.target instanceof Element ? e.target.closest('[data-where]') : null);
+      if (el && !this.busy) {
+        this.lastWhere = el.dataset.where ?? null;
+        this.lastWhereAt = Date.now();
+      }
+    }, true);
+    this.el.page.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && this.drawer) this.openDrawer(null);
+    });
     this.root.append(this.el.page);
     this.chart = new ResponseChart(canvas, tooltip);
   }
 
-  /** Re-render one section, or all of them. @param {string} [name] */
+  renderHeader() {
+    const options = [
+      ...this.mappings.map((m) => h('option', { value: m.id, selected: m.id === this.settings.mappingId }, m.name)),
+      h('option', { value: '__new', selected: !this.mapping }, this.mappings.length ? 'Set up another speaker…' : 'No speaker yet'),
+    ];
+    const speaker = /** @type {HTMLSelectElement} */ (h('select', { class: 'speaker-switch', 'aria-label': 'Speaker', disabled: !!this.busy,
+      onchange: () => {
+        const id = speaker.value;
+        if (id === '__new') {
+          /** @type {any} */ (this).draft = null;
+          this.useMapping('').then(() => this.goStep('setup'));
+          return;
+        }
+        this.run('Switching speaker', async () => {
+          /** @type {any} */ (this).draft = null;
+          await this.useMapping(id);
+        }, 'global');
+      } }, options));
+    const conn = this.demo ? 'Demo' : this.api ? 'Connected' : 'Not connected';
+    this.el.header.replaceChildren(
+      h('div', { class: 'room' }, h('span', { class: 'eyebrow' }, `Speaker Tuner · v${VERSION}`), speaker),
+      h('div', { class: 'header-actions' },
+        h('span', { class: `conn-pill ${this.api ? '' : 'off'}`, title: conn }, h('span', { class: 'dot' }), h('span', { class: 'hide-sm' }, conn)),
+        h('button', { class: 'icon-btn', disabled: !this.writer, onclick: () => this.openDrawer('settings'), title: 'Every setting of this speaker', 'aria-label': 'All settings' },
+          h('span', { 'aria-hidden': 'true' }, '⚙'), h('span', { class: 'hide-sm' }, 'All settings')),
+        h('button', { class: 'icon-btn', onclick: () => this.openDrawer('messages'), 'aria-label': 'Messages' },
+          h('span', { 'aria-hidden': 'true' }, '☰'), h('span', { class: 'hide-sm' }, 'Messages'), this.el.msgCount)));
+    const step = this.currentStep();
+    const done = this.stepDone();
+    this.el.steps.replaceChildren(...STEPS.map((st, i) => h('button', {
+      class: `step-tab ${/** @type {any} */ (done)[st.id] && st.id !== step ? 'done' : ''}`,
+      'aria-current': st.id === step ? 'step' : null,
+      onclick: () => this.goStep(st.id),
+    }, h('span', { class: 'n' }, /** @type {any} */ (done)[st.id] && st.id !== step ? '✓' : String(i + 1)), h('span', { class: 'lbl' }, st.label))));
+    this.el.chartTools.replaceChildren(
+      h('button', { class: 'link', onclick: () => this.toggleTable() }, this.el.table.hidden ? 'Table' : 'Hide table'),
+      h('button', { class: 'link', onclick: () => {
+        this.chartSmall = !this.chartSmall;
+        this.el.page.classList.toggle('chart-small', this.chartSmall);
+        this.renderHeader();
+        this.chart?.draw();
+      } }, this.chartSmall ? 'Bigger chart' : 'Smaller chart'));
+  }
+
+  /** Re-render one section, or every section of the current step. @param {string} [name] */
   refresh(name) {
-    const names = name ? [name] : Object.keys(this.renderers);
+    const step = this.currentStep();
+    const wanted = /** @type {any} */ (STEPS.find((st) => st.id === step)).sections.filter((n) => !(n === 'connect' && this.mode === 'panel'));
+    if (name === 'settings') {
+      if (this.drawer === 'settings') this.renderDrawer();
+      return;
+    }
+    // cards that don't belong to the current step leave (the step can change from code too)
+    for (const [n, el] of Object.entries(this.sections)) {
+      if (!wanted.includes(n)) {
+        el.remove();
+        delete this.sections[n];
+      }
+    }
+    const names = name ? (wanted.includes(name) ? [name] : []) : wanted;
     for (const n of names) {
-      if (n === 'connect' && this.mode === 'panel') continue;
       const next = this.renderers[n](this);
       const old = this.sections[n];
       // keep what the user opened or closed, unless the card's default changed (e.g. setup done)
       if (old instanceof HTMLDetailsElement && next instanceof HTMLDetailsElement && old.dataset.default === next.dataset.default) next.open = old.open;
-      // a section can have been replaced already by a refresh that ran in between
       if (old?.isConnected) old.replaceWith(next);
-      else if (old) continue;
       else this.el.sections.append(next);
       this.sections[n] = next;
     }
-    const conn = this.el.header.querySelector('.conn');
-    if (conn) conn.textContent = this.demo ? 'Demo mode' : this.api ? 'Connected' : 'Not connected';
+    if (!name) {
+      // keep the cards in the step's order
+      for (const n of wanted) if (this.sections[n]) this.el.sections.append(this.sections[n]);
+      if (this.drawer === 'settings') this.renderDrawer();
+      this.updateChart();
+    }
+    this.renderHeader();
     this.status(this.busy);
-    if (!name) this.updateChart();
   }
 }
 
 /**
- * Collapsible card. @param {string} title @param {string} summary @param {any[]} body @param {boolean} [open]
+ * Collapsible card. Its messages (from buttons inside it) show at the bottom of it.
+ * @param {string} title @param {string} summary @param {any[]} body @param {boolean} [open]
+ * @param {string} [where] message key; from the title by default
  */
-export function card(title, summary, body, open = false) {
-  return /** @type {HTMLDetailsElement} */ (h('details', { class: 'card', open, 'data-default': open ? 'open' : 'closed' },
+export function card(title, summary, body, open = false, where = slug(title)) {
+  return /** @type {HTMLDetailsElement} */ (h('details', { class: 'card', open, 'data-default': open ? 'open' : 'closed', 'data-where': where },
     h('summary', null, h('span', { class: 'card-title' }, title), summary ? h('span', { class: 'card-summary muted' }, summary) : null),
-    h('div', { class: 'card-body' }, body)));
+    h('div', { class: 'card-body' }, body, feedbackBox(where))));
+}
+
+/** Where a card or block shows its messages. @param {string} where */
+export function feedbackBox(where) {
+  return h('div', { class: 'feedback', 'data-for': where, 'aria-live': 'polite' }, currentApp?.feedbackNodes(where) ?? []);
 }

@@ -203,7 +203,7 @@ export class ResponseChart {
       const rows = this.series.map((s) => {
         const v = valueAt(s, f);
         if (v !== null) {
-          g.fillStyle = this.css('--surface-1') || '#fff';
+          g.fillStyle = this.css('--surface-1') || '#19191b';
           g.beginPath();
           g.arc(this.hoverX ?? 0, y(v), 5, 0, Math.PI * 2);
           g.fill();

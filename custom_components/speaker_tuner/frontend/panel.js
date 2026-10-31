@@ -59,7 +59,7 @@ class SpeakerTunerPanel extends HTMLElement {
     css.rel = 'stylesheet';
     css.href = new URL('./app.css', import.meta.url).href;
     const style = document.createElement('style');
-    style.textContent = ':host { display: block; height: 100%; overflow: auto; background: var(--primary-background-color); }';
+    style.textContent = ':host { display: block; height: 100%; overflow: auto; background: var(--primary-background-color); } .page { min-height: 100%; }';
     root.append(css, style);
     this.app = new TunerApp(root, { mode: 'panel', api: new HaApi(transportFromHass(this._hass)) });
     this.app.start().then(() => {
@@ -67,7 +67,7 @@ class SpeakerTunerPanel extends HTMLElement {
       const menu = Object.assign(document.createElement('button'), { className: 'ha-menu link', textContent: '☰', title: 'Menu', hidden: !this._narrow });
       menu.setAttribute('aria-label', 'Open the Home Assistant menu');
       menu.addEventListener('click', () => this.dispatchEvent(new Event('hass-toggle-menu', { bubbles: true, composed: true })));
-      root.querySelector('.top')?.prepend(menu);
+      root.querySelector('.header')?.prepend(menu);
       this.applyTheme();
     }).catch((e) => {
       root.append(Object.assign(document.createElement('p'), { textContent: `Speaker Tuner failed to start: ${e.message}` }));

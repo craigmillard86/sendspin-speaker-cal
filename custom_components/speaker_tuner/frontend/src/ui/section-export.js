@@ -8,6 +8,7 @@ import { exportYaml, rewFilters } from '../profiles/export.js';
 import { expandRoles, settingRoles } from '../profiles/profile.js';
 import { curveRms } from '../measure/peq.js';
 import { tuningReport } from './report.js';
+import { resetSpeakerToYaml } from './section-settings.js';
 
 /** @param {import('./app.js').TunerApp} app */
 export function renderExport(app) {
@@ -62,5 +63,9 @@ export function renderExport(app) {
       h('button', { onclick: () => download(`${fileBase}-filters.txt`, rewFilters(profile, values)) }, 'REW filter file'),
       h('button', { onclick: report }, 'Tuning report (HTML)'),
       mapping && !app.demo ? h('button', { class: 'link', onclick: () => download(`${fileBase}-mapping.json`, JSON.stringify(mapping, null, 2), 'application/json') }, 'Device mapping (personal: holds your entity IDs)') : null),
-  ]);
+    app.has('crossover_reset') ? h('div', { class: 'subpanel' },
+      h('h4', null, 'After flashing'),
+      h('p', { class: 'help' }, 'Make the speaker take its values from the new YAML, and check they match the tuning.'),
+      h('button', { onclick: () => resetSpeakerToYaml(app), disabled: !!app.busy }, 'Reset speaker to YAML')) : null,
+  ], true);
 }

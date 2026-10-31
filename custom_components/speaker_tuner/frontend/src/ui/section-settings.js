@@ -51,19 +51,7 @@ export function renderSettings(app) {
   const groups = {};
   for (const role of mapped) (groups[roles[role].group ?? 'other'] ??= []).push(role);
 
-  const resetToYaml = () => app.run('Resetting the device to its YAML values', async (signal) => {
-    await app.confirm('Reset to YAML?', 'Presses "Reset Crossover to YAML" on the device: every saved Home Assistant value is replaced by the crossover: block in its YAML. Use it after flashing an exported YAML. The values are read back afterwards so you can see what changed.', 'Reset');
-    const tuning = mapped.filter((r) => !r.endsWith('_mute'));
-    const before = w.snapshot(tuning);
-    await w.press('crossover_reset');
-    await sleep(3000, signal);
-    const after = w.snapshot(tuning);
-    const changed = tuning.filter((r) => JSON.stringify(before[r]) !== JSON.stringify(after[r]));
-    /** @type {any} */ (app).resetDiff = changed.map((r) => ({ role: r, before: before[r], after: after[r] }));
-    app.notify(changed.length
-      ? `Reset done: ${changed.length} values changed. If the YAML holds your exported tuning, nothing should have changed; see the list below.`
-      : 'Reset done: the YAML values match what was set. The tuning is in the YAML.', changed.length ? 'warn' : 'ok');
-  });
+  const resetToYaml = () => resetSpeakerToYaml(app);
   const diff = /** @type {any} */ (app).resetDiff;
 
   return card('Speaker settings', `${mapped.length} settings`, [
@@ -74,5 +62,29 @@ export function renderSettings(app) {
     app.has('crossover_reset') ? h('div', { class: 'row' }, h('button', { onclick: resetToYaml, disabled: !!app.busy }, 'Reset device to YAML')) : null,
     diff?.length ? h('table', { class: 'small' }, h('tr', null, h('th', null, 'Setting'), h('th', null, 'Before'), h('th', null, 'After reset')),
       diff.map((/** @type {any} */ d) => h('tr', null, h('td', null, d.role), h('td', null, String(d.before)), h('td', null, String(d.after))))) : null,
-  ]);
+  ], true, 'settings');
+}
+
+/**
+ * Press "Reset Crossover to YAML" on the speaker and read the values back, so you can see
+ * whether the flashed YAML holds the tuning. Used from All settings and from Save.
+ * @param {import('./app.js').TunerApp} app
+ */
+export function resetSpeakerToYaml(app) {
+  return app.run('Resetting the speaker to its YAML', async (signal) => {
+    const w = app.writer;
+    const profile = app.profile;
+    if (!w || !profile) throw new Error('Set up a speaker first.');
+    await app.confirm('Reset to YAML?', 'Presses "Reset Crossover to YAML" on the speaker: every value saved from Home Assistant is replaced by the crossover: block in its YAML. Use it after flashing an exported YAML. The values are read back afterwards so you can see what changed.', 'Reset');
+    const tuning = settingRoles(profile).filter((r) => app.has(r));
+    const before = w.snapshot(tuning);
+    await w.press('crossover_reset');
+    await sleep(3000, signal);
+    const after = w.snapshot(tuning);
+    const changed = tuning.filter((r) => JSON.stringify(before[r]) !== JSON.stringify(after[r]));
+    /** @type {any} */ (app).resetDiff = changed.map((r) => ({ role: r, before: before[r], after: after[r] }));
+    app.notify(changed.length
+      ? `${changed.length} values changed. If the YAML holds your exported tuning, nothing should have changed; the list is in All settings.`
+      : 'The YAML matches the tuning: every value read back the same.', changed.length ? 'warn' : 'ok');
+  });
 }

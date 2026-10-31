@@ -3,7 +3,7 @@
 // revert, A/B listening and copying the tuning to another speaker.
 
 import { h, field, select, db } from './dom.js';
-import { card } from './app.js';
+import { card, feedbackBox } from './app.js';
 import {
   levelMatch, polarityTest, crossoverScan, delayScan, lowEnd, notchAndAir, baffleSuggestion, boostFloor,
 } from '../measure/driver-checks.js';
@@ -63,11 +63,12 @@ function reportWrite(app, r, changes) {
 }
 
 /** @param {App} app @param {Record<string, any>} changes @param {string} what */
-function applyValues(app, changes, what) {
+function applyValues(app, changes, what, onDone) {
   return app.run(`Applying ${what}`, async (signal) => {
     await app.ensureSession();
     const r = await /** @type {DspWriter} */ (app.writer).write(changes, { signal });
     reportWrite(app, r, changes);
+    if (r.ok) onDone?.();
     await checkHeadroom(app);
   });
 }
@@ -100,18 +101,32 @@ function step(app, { id, title, text, needs, run, describe, extra, enabled = tru
     // the revert point is taken before the step writes its first test value
     await app.ensureSession();
     app.results[id] = await run(signal);
-  });
-  return h('div', { class: 'step' },
-    h('div', { class: 'step-head' }, h('h4', null, title),
-      h('button', { onclick: go, disabled: !!app.busy || !app.writer || lacking.length > 0 || !enabled }, result ? 'Run again' : 'Run')),
+  }, id);
+  // the step's state at a glance
+  const chip = !result ? ['Not run', ''] : result.applied ? ['Applied', 'chip-ok'] : hasSuggestion ? ['Suggested change', 'chip-strong'] : ['Nothing to change', 'chip-ok'];
+  const roles = app.roles;
+  /** @param {any} v */
+  const show = (v) => (typeof v === 'number' ? String(Math.round(v * 100) / 100) : v === true ? 'on' : v === false ? 'off' : String(v ?? '–'));
+  return h('div', { class: 'step', 'data-where': id },
+    h('div', { class: 'step-head' },
+      h('div', { class: 'step-title' }, h('h4', null, title), h('span', { class: `chip ${chip[1]}` }, chip[0])),
+      h('button', { class: result ? '' : 'primary', onclick: go, disabled: !!app.busy || !app.writer || lacking.length > 0 || !enabled }, result ? 'Run again' : 'Run')),
     h('p', { class: 'help' }, text),
-    lacking.length ? h('p', { class: 'muted' }, `Needs these roles mapped in setup: ${lacking.join(', ')}.`) : null,
-    note ? h('p', { class: 'muted' }, note) : null,
+    lacking.length ? h('p', { class: 'reason' }, `Needs these settings mapped in Set up: ${lacking.join(', ')}.`) : null,
+    note ? h('p', { class: 'reason' }, note) : null,
     extra ?? null,
     result ? h('div', { class: 'step-result' }, describe(result)) : null,
-    hasSuggestion ? h('div', { class: 'row' },
-      h('span', null, `Suggested: ${Object.entries(suggestion).map(([k, v]) => `${k} = ${typeof v === 'number' ? Math.round(v * 100) / 100 : v}`).join(', ')}`),
-      h('button', { class: 'primary', disabled: !!app.busy, onclick: () => applyValues(app, suggestion, title.toLowerCase()) }, 'Apply')) : null);
+    hasSuggestion && !result.applied ? h('div', null,
+      h('table', { class: 'ba' },
+        h('tr', null, h('th', null, 'Setting'), h('th', null, 'Now'), h('th', null, 'Suggested')),
+        Object.entries(suggestion).map(([k, v]) => h('tr', null,
+          h('td', null, roles[k]?.label ?? k),
+          h('td', null, `${show(app.writer?.value(k))}${roles[k]?.unit ? ` ${roles[k].unit}` : ''}`),
+          h('td', { class: 'ba-new' }, `${show(v)}${roles[k]?.unit ? ` ${roles[k].unit}` : ''}`)))),
+      h('div', { class: 'row' },
+        h('button', { class: 'primary', disabled: !!app.busy, onclick: () => applyValues(app, suggestion, title.replace(/^\d+\.\s*/, '').toLowerCase(), () => (result.applied = true)) }, 'Apply'),
+        h('span', { class: 'reason' }, 'Nothing changes on the speaker until you apply.'))) : null,
+    feedbackBox(id));
 }
 
 /** Chart reference level: 1 kHz of the first full measurement shown (as in app.updateChart). @param {App} app */
@@ -345,7 +360,7 @@ function peqBlock(app, fulls, chartReference) {
 
   const plan = app.plan;
   const rr = a.refineResult;
-  return h('div', { class: 'step' },
+  return h('div', { class: 'step', 'data-where': 'peq' },
     h('div', { class: 'step-head' }, h('h4', null, 'PEQ fit')),
     h('p', { class: 'help' }, `Fits up to ${app.profile?.peq_banks.filter((b) => !b.mirror_of).map((b) => `${b.bands ?? b.frequencies?.length} ${b.name ?? b.id}`).join(' + ')} bands towards the target between ${formatHz(rules.fMin)}Hz and ${formatHz(rules.fMax)}Hz, gains ${rules.gainMin} to ${rules.gainMax} dB${rules.cutsOnly ? ' (cuts only)' : ''}. Narrow dips (room cancellations) are never boosted, nor anything below ${Math.round(floor)} Hz. Use a ${app.settings.positions}-position measurement for this.`),
     h('div', { class: 'row' },
@@ -366,7 +381,8 @@ function peqBlock(app, fulls, chartReference) {
       h('div', { class: 'row' },
         h('button', { class: 'primary', onclick: applyRefine, disabled: !!app.busy }, 'Apply and measure again'),
         h('span', { class: 'muted' }, 'Up to 3 passes; stops when a pass gains under 0.3 dB.'))) : null,
-    rr ? h('p', null, `Last run: ${rr.steps.map((/** @type {any} */ s) => `pass ${s.iteration} ${s.rms !== null ? `${s.rms.toFixed(2)} dB` : 'not measured'}`).join(', ')} (from ${rr.startRms.toFixed(2)} dB).`) : null);
+    rr ? h('p', { class: 'reason' }, `Last run: ${rr.steps.map((/** @type {any} */ s) => `pass ${s.iteration} ${s.rms !== null ? `${s.rms.toFixed(2)} dB` : 'not measured'}`).join(', ')} (from ${rr.startRms.toFixed(2)} dB).`) : null,
+    feedbackBox('peq'));
 }
 
 /** @param {App} app */
@@ -415,7 +431,7 @@ function abBlock(app) {
     app.persist();
     reportWrite(app, r, values);
   });
-  return h('div', { class: 'step' },
+  return h('div', { class: 'step', 'data-where': 'ab' },
     h('div', { class: 'step-head' }, h('h4', null, 'Listen: A/B')),
     h('p', { class: 'help' }, 'Play your own music, then switch between A (session start) and B (the tuning). With level matching on, the louder one is turned down by the measured difference so it doesn\'t win just by being louder.'),
     !tuned ? h('p', { class: 'muted' }, 'Apply a PEQ fit first, or save the current values as B.') : null,
@@ -431,7 +447,8 @@ function abBlock(app) {
         app.refresh('tune');
       } }, 'Save current values as B'),
       gains ? h('label', { class: 'check' }, matched, ` Level match (${db(diff)})`) : h('span', { class: 'muted' }, 'Level matching needs the driver gain roles.')),
-    ab.now === 'A' && tuned ? h('p', { class: 'muted' }, 'The speaker is on A now. Press B to go back to the tuning.') : null);
+    ab.now === 'A' && tuned ? h('p', { class: 'reason' }, 'The speaker is on A now. Press B to go back to the tuning.') : null,
+    feedbackBox('ab'));
 }
 
 /** Copy the tuning to another speaker with the same profile, then verify. @param {App} app */
@@ -482,14 +499,15 @@ function copyBlock(app) {
       ? `${other.name} differs from ${app.mapping?.name} by ${diff.toFixed(1)} dB RMS. It is worth tuning it in its own session.`
       : `${other.name} matches within ${diff.toFixed(1)} dB RMS.`, diff > 1.5 ? 'warn' : 'ok');
   });
-  return h('div', { class: 'step' },
+  return h('div', { class: 'step', 'data-where': 'copy' },
     h('div', { class: 'step-head' }, h('h4', null, 'Copy to another speaker')),
     h('p', { class: 'help' }, 'For a second cabinet of the same build: copy every setting, then measure it once to check it matches.'),
     h('div', { class: 'row' },
       select(others.map((m) => ({ value: m.id, label: m.name })), a.copyTarget, (v) => (a.copyTarget = v)),
       h('button', { onclick: copy, disabled: !!app.busy }, 'Copy settings'),
       h('button', { onclick: verify, disabled: !!app.busy || app.demo }, 'Measure to verify'),
-      a.copyUndo ? h('button', { class: 'link', disabled: !!app.busy, onclick: () => undoCopy(app) }, `Undo the copy to ${a.copyUndo.name}`) : null));
+      a.copyUndo ? h('button', { class: 'link', disabled: !!app.busy, onclick: () => undoCopy(app) }, `Undo the copy to ${a.copyUndo.name}`) : null),
+    feedbackBox('copy'));
 }
 
 /** Roles that depend on how a cabinet is wired, never copied between speakers. */

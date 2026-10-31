@@ -12,6 +12,9 @@ import { STORE_GRID } from '../dsp/analyse.js';
 /** @param {import('./app.js').TunerApp} app */
 export function renderMeasure(app) {
   const ready = !!app.writer;
+  const micReady = app.demo || !!app.recorder;
+  const blocked = !ready ? 'Needs a speaker.' : !micReady ? 'Needs a microphone.' : '';
+  const fixIt = blocked ? h('span', { class: 'reason' }, blocked, ' ', h('button', { class: 'link', onclick: () => app.goStep('setup') }, 'Go to Set up')) : null;
   const s = app.session;
   const mutes = app.has('tweeter_mute') && app.has('mid_mute');
   // what the user has typed or picked survives the re-render after any task
@@ -54,6 +57,8 @@ export function renderMeasure(app) {
       const rec = await app.measure({ label: form.label.trim() || `Measurement ${app.measurements.length + 1}`, kind, positions: n }, signal);
       app.addMeasurement(rec);
       form.label = '';
+      app.notify(`"${rec.label}" measured. ${rec.positions > 1 ? `${rec.positions} positions averaged; ` : ''}it's on the chart${kind === 'full' ? ' and ready to tune' : ''}.`, 'ok',
+        kind === 'full' ? { label: 'Next: Tune', fn: () => app.goStep('tune') } : undefined);
     } finally {
       if (prep) await writer.write({ tweeter_mute: false, mid_mute: false });
     }
@@ -124,14 +129,15 @@ export function renderMeasure(app) {
 
   const summary = `${app.measurements.length} measurement${app.measurements.length === 1 ? '' : 's'}${s?.levelVolume ? ` · level ${Math.round(s.levelVolume * 100)}%` : ''}`;
   return card('Measure', summary, [
-    !ready ? h('p', { class: 'help' }, 'Set up a speaker first.') : null,
     h('p', { class: 'help' }, 'Set the level once per session. The speaker plays pink noise and gets louder until the mic hears enough. After that every measurement uses the same volume, so they can be compared.'),
     h('div', { class: 'row' },
-      h('button', { onclick: level, disabled: !ready || !!app.busy }, s?.levelVolume ? 'Re-level' : 'Set level'),
+      h('button', { class: s?.levelVolume ? '' : 'primary', onclick: level, disabled: !!blocked || !!app.busy }, s?.levelVolume ? 'Set level again' : 'Set level'),
+      fixIt,
       s?.levelVolume ? h('span', { class: 'muted' }, `Session started ${new Date(s.started).toLocaleTimeString()}, volume ${Math.round(s.levelVolume * 100)}%`) : null),
     h('div', { class: 'row' }, field('Label', label), field('What', kinds), field('Mic positions', positions)),
     h('div', { class: 'row' },
-      h('button', { class: 'primary', onclick: measure, disabled: !ready || !!app.busy }, 'Measure'),
+      h('button', { class: 'primary', onclick: measure, disabled: !!blocked || !!app.busy }, 'Measure'),
+      !blocked && !s?.levelVolume ? h('span', { class: 'reason' }, 'Sets the level first.') : fixIt,
       h('button', { onclick: importRew }, 'Import REW response')),
     app.measurements.length ? list : h('p', { class: 'muted' }, 'No measurements yet.'),
     app.measurements.length ? h('div', { class: 'row' },

@@ -118,8 +118,19 @@ profile and adjust it, or write your own: see [Writing a profile](#writing-a-pro
 
 ## First run
 
-Open **Speaker Tuner** from the sidebar. The page has a chart at the top and these sections
-below it.
+Open **Speaker Tuner** from the sidebar. At the top is your speaker's name (pick another
+speaker there), the four steps **Set up · Measure · Tune · Save**, and the chart.
+
+- Whatever a button does is reported right under it, with a button to fix any problem.
+- Anything that is running (levelling, measuring, a scan) shows in a bar at the bottom of the
+  screen, with a round **Stop** button that is always within reach.
+- Problems with the speaker itself (a driver left muted, the connection lost) show in a strip
+  under the steps until they are fixed.
+- **Messages** (top right) keeps everything that was said this session; **All settings** has
+  a control for every speaker setting.
+
+**Set up** starts with a checklist: Home Assistant, the speaker, the microphone and the test
+noise. Each item has the button that sorts it out; when all four are ticked, go on to Measure.
 
 ### 1. Speaker
 
@@ -170,7 +181,7 @@ below it.
 
 ## Measuring
 
-Open **Measure**.
+Go to the **Measure** step.
 
 1. Press **Set level** once per session. The speaker plays the noise starting at 10% volume
    and goes up in 5% steps until the mic hears a good level (−30 dBFS), never above 60%. If
@@ -192,7 +203,7 @@ volume) and puts it back afterwards.
 
 ## Tuning a two-way speaker step by step
 
-Open **Tune**. Each step measures, works out a suggestion, puts back anything it changed for
+Go to the **Tune** step. Each check measures, works out a suggestion, puts back anything it changed for
 the test, and shows the result. Nothing changes until you press **Apply**. Run the steps in
 order the first time; run any of them again later.
 
@@ -217,7 +228,7 @@ order the first time; run any of them again later.
 
 ## Fitting the EQ
 
-At the bottom of **Tune**:
+At the bottom of the **Tune** step:
 
 1. Measure the whole speaker with several positions, pick that measurement and press
    **Fit**. The dotted line on the chart shows the predicted result, and a table lists the
@@ -253,7 +264,7 @@ After applying boosts, the tool reads the speaker's peak-gain sensors (if mapped
 driver's chain peaks above 0 dB, loud passages can clip inside the DSP; the tool warns and
 offers to turn on headroom compensation.
 
-**Speaker settings** has a control for every mapped setting, if you want to change
+**All settings** (top right) has a control for every mapped setting, if you want to change
 something by hand.
 
 ## Keeping the result: export and YAML
@@ -263,14 +274,14 @@ straight away. (ESPHome writes saved values about once a minute, so wait a minut
 pulling the plug.) To make the tuning part of the device's YAML, so it survives a factory
 reset and can be shared:
 
-1. Open **Export**. The YAML for your profile is shown, with `substitutions:` for every value
+1. Go to the **Save** step. The YAML for your profile is shown, with `substitutions:` for every value
    and the matching component block. If a value would be rejected by ESPHome's checks, a
    warning says which.
 2. **Download YAML** or **Copy**, paste it into the device's YAML, and flash it.
-3. In **Speaker settings**, press **Reset device to YAML**. The speaker replaces its saved
+3. Still in **Save**, press **Reset speaker to YAML**. The speaker replaces its saved
    values with the YAML ones; the tool reads them back and shows anything that differs.
 
-Also in **Export**: a **REW filter file**, a self-contained **tuning report** (HTML with
+Also in **Save**: a **REW filter file**, a self-contained **tuning report** (HTML with
 before/after charts, the settings changed and the YAML), and the device mapping. The mapping
 contains your entity IDs, so keep it to yourself; share profiles instead.
 
@@ -296,7 +307,7 @@ lines, and the `"Sens Factor"` header of UMIK-1 files is fine.
 ## Target curves
 
 A target is a list of `[frequency, dB]` points, joined up on a log-frequency scale and set to
-0 dB at 1 kHz. Edit the points in **Mic and target** and save as a custom target, or add a
+0 dB at 1 kHz. Edit the points in **Mic and target** (in Set up) and save as a custom target, or add a
 file to `targets/`:
 
 ```json
