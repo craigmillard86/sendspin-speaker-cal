@@ -30,6 +30,8 @@ import { alignmentOffset, rmsDeviation } from './metrics.js';
  * }} FitResult
  */
 
+const FLOOR_SPILL_DB = 1;
+
 export const DEFAULT_Q_GRID = [0.5, 0.6, 0.7, 0.85, 1, 1.2, 1.4, 1.7, 2, 2.4, 2.8, 3.4, 4, 5, 6, 7, 8, 9, 10];
 
 /**
@@ -92,11 +94,19 @@ export function fitPeq(input) {
   const offset = alignmentOffset(freqs, measuredDb, targetDb, rules.fMin, rules.fMax, input.mask);
   // the correction we would like the filters to make
   const wanted = new Float64Array(n);
+  // below the boost floor a deficit is left alone: raising it is not allowed, and a little
+  // spill (up to FLOOR_SPILL_DB) from a boost above the floor is tolerated rather than fought
+  const floorZone = new Uint8Array(n);
   for (let i = 0; i < n; i++) {
     wanted[i] = targetDb[i] - (measuredDb[i] - offset);
-    // below the boost floor nothing may be raised, so a wide boost spilling down there costs
-    if (freqs[i] < boostFloor) wanted[i] = Math.min(wanted[i], 0);
+    if (freqs[i] < boostFloor && wanted[i] >= 0) floorZone[i] = 1;
   }
+  /** error the filters still have to fix at point i */
+  const residual = (/** @type {number} */ i, /** @type {Float64Array} */ total) => {
+    if (!floorZone[i]) return wanted[i] - total[i];
+    if (total[i] > FLOOR_SPILL_DB) return FLOOR_SPILL_DB - total[i];
+    return total[i] < 0 ? -total[i] : 0;
+  };
 
   /** @param {number} f */
   const bankFor = (f) => banks.find((b) => f >= b.fLo && f < b.fHi);
@@ -117,7 +127,7 @@ export function fitPeq(input) {
   const cost = (total) => {
     let s = 0;
     for (const i of idx) {
-      const d = wanted[i] - total[i];
+      const d = residual(i, total);
       s += d * d;
     }
     return s;
@@ -148,8 +158,9 @@ export function fitPeq(input) {
     let pick = -1;
     let pickAbs = 0;
     for (const i of idx) {
-      if (banned.has(i)) continue;
-      const r = wanted[i] - total[i];
+      // no filter is started below the floor just to trim spill from a boost above it
+      if (banned.has(i) || floorZone[i]) continue;
+      const r = residual(i, total);
       const f = freqs[i];
       if (Math.abs(r) < stopDb || Math.abs(r) <= pickAbs) continue;
       if (!frequencyAllowed(f)) continue;
@@ -163,7 +174,7 @@ export function fitPeq(input) {
     if (pick < 0) break;
 
     const f = freqs[pick];
-    const boost = wanted[pick] - total[pick] > 0;
+    const boost = residual(pick, total) > 0;
     const before = cost(total);
     let best = { q: 1, gain: 0, value: before, resp: new Float64Array(n) };
     for (const q of qGrid) {

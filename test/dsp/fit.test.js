@@ -83,6 +83,7 @@ test('respects the bass boost floor', () => {
   const result = fitPeq({ freqs, measuredDb: measured, targetDb: flat, fs: FS, rules: tierRules('calibrated'), banks: oneBank, ranges, boostFloorHz: 130 });
   assert.ok(result.filters.filter((f) => f.gain > 0).every((f) => f.f >= 130));
   assert.ok(result.filters.some((f) => f.gain > 0 && Math.abs(f.f - 200) / 200 < 0.1));
+  assert.ok(result.filters.every((f) => f.f >= 130), 'no filters spent below the floor fighting boost spill');
 });
 
 test('stays within the bank sizes', () => {
