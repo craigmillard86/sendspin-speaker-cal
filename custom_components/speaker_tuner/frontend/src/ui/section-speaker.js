@@ -6,7 +6,7 @@ import { h, field, select, download, pickTextFile } from './dom.js';
 import { card } from './app.js';
 import * as store from './store.js';
 import { listEsphomeDevices, deviceEntities, suggestMapping } from '../ha/discover.js';
-import { uploadMedia } from '../ha/connection.js';
+import { uploadMedia, MEDIA_FOLDER } from '../ha/connection.js';
 import { Playback } from '../ha/playback.js';
 import { expandRoles, checkProfile } from '../profiles/profile.js';
 import { validate } from '../profiles/validate.js';
@@ -173,7 +173,7 @@ function roleEditor(app, d, profile) {
 
 /** @param {import('./app.js').TunerApp} app @param {Draft} d */
 function noiseFile(app, d) {
-  const url = /** @type {HTMLInputElement} */ (h('input', { value: d.media_url ?? '', placeholder: `media-source://media_source/local/${NOISE_FILE}`, oninput: (/** @type {any} */ e) => (d.media_url = e.target.value.trim()) }));
+  const url = /** @type {HTMLInputElement} */ (h('input', { value: d.media_url ?? '', placeholder: `${MEDIA_FOLDER}/${NOISE_FILE}`, oninput: (/** @type {any} */ e) => (d.media_url = e.target.value.trim()) }));
   const wav = () => encodeWav16(testSignal(), 48000);
   const upload = () => app.run('Uploading the test noise to Home Assistant', async () => {
     const id = await uploadMedia(/** @type {any} */ (app.api), new Blob([wav()], { type: 'audio/wav' }), NOISE_FILE);
@@ -199,5 +199,5 @@ function noiseFile(app, d) {
       h('button', { onclick: () => download(NOISE_FILE, wav(), 'audio/wav') }, 'Download WAV'),
       h('button', { onclick: upload, disabled: !app.api || app.demo || !!app.busy }, 'Upload to Home Assistant'),
       h('button', { onclick: tryIt, disabled: !app.api || app.demo || !!app.busy }, 'Play 3 s')),
-    field('Test noise media URL', url, 'Filled in after uploading. For a file you placed in /media, use media-source://media_source/local/<file name>.'));
+    field('Test noise media URL', url, 'Filled in after uploading. For a file you copied into /media yourself, use media-source://media_source/local/<file name>.'));
 }

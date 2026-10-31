@@ -173,3 +173,19 @@ test('a pass that makes things worse is undone, leaving the best values', async 
   assert.equal(result.finalRms, 3);
   assert.match(result.reason, /pass 2 made it worse and was undone/);
 });
+
+test('media upload posts the file to HA\'s local media folder with the token', async () => {
+  const { uploadMedia, MEDIA_FOLDER, HaApi: Api } = await import('../../custom_components/speaker_tuner/frontend/src/ha/connection.js');
+  let seen = null;
+  const fetchImpl = async (url, init) => {
+    seen = { url, init };
+    return { ok: true, json: async () => ({ media_content_id: `${MEDIA_FOLDER}/noise.wav` }) };
+  };
+  const api = new Api({ send: async () => null, subscribe: async () => () => {}, http: { baseUrl: 'https://ha.example:8123', token: () => 'tok' } });
+  const id = await uploadMedia(api, new Blob([new Uint8Array(8)], { type: 'audio/wav' }), 'noise.wav', { fetchImpl });
+  assert.equal(seen.url, 'https://ha.example:8123/api/media_source/local_source/upload');
+  assert.equal(seen.init.headers.Authorization, 'Bearer tok');
+  assert.equal(seen.init.body.get('media_content_id'), 'media-source://media_source/local/speaker-tuner');
+  assert.equal(seen.init.body.get('file').type, 'audio/wav');
+  assert.equal(id, 'media-source://media_source/local/speaker-tuner/noise.wav');
+});

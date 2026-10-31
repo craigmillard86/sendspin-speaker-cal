@@ -165,13 +165,16 @@ export function connectWithToken(baseUrl, token, { WebSocketImpl = globalThis.We
   });
 }
 
+/** Where the test noise goes: /media/speaker-tuner/ on a standard install (HA creates the folder). */
+export const MEDIA_FOLDER = 'media-source://media_source/local/speaker-tuner';
+
 /**
  * Upload a file into HA's local media folder (needs an admin user).
- * HA stores it in the root of its "local" media source; the result is its media-source:// ID.
+ * The result is the uploaded file's media-source:// ID, ready for play_media.
  * @param {HaApi} api @param {Blob} file @param {string} filename
  * @param {{ fetchImpl?: typeof fetch, folder?: string }} [options]
  */
-export async function uploadMedia(api, file, filename, { fetchImpl = globalThis.fetch, folder = 'media-source://media_source/local/.' } = {}) {
+export async function uploadMedia(api, file, filename, { fetchImpl = globalThis.fetch, folder = MEDIA_FOLDER } = {}) {
   const http = api.transport.http;
   if (!http) throw new Error('This connection cannot upload files');
   const form = new FormData();
