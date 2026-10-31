@@ -29,6 +29,8 @@ export class SimMeasurer {
   /** @param {number} v */
   async setVolume(v) {
     await this.writer.api.callService('media_player', 'volume_set', { volume_level: v }, { entity_id: this.writer.entities.media_player });
+    // wait for the player to report it, like a real one does a moment later
+    for (let i = 0; i < 200 && Math.abs((await this.getVolume()) - v) > 1e-6; i++) await sleep(5);
   }
 
   /** @param {{ signal?: AbortSignal, onStatus?: (t: string) => void }} [o] */
