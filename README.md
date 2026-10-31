@@ -108,8 +108,8 @@ Things that matter for tuning:
 - **`tweeter_min_frequency`** in the YAML is the lowest crossover the tool may ever set.
   Keep it at a safe value for your tweeter.
 - Changes you make from Home Assistant are **saved on the device** and come back after a
-  reboot. Use a version of the fork from November 2026 or later so the polarity, loudness
-  and headroom switches are saved as well.
+  reboot. Use the fork at commit `95d6170` (31 October 2026) or later so the polarity,
+  loudness and headroom switches are saved as well.
 
 ### Other components
 
