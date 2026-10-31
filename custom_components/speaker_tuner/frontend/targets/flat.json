@@ -1,0 +1,15 @@
+{
+  "$schema": "../schema/target.schema.json",
+  "id": "flat",
+  "name": "Flat",
+  "points": [
+    [
+      20,
+      0
+    ],
+    [
+      20000,
+      0
+    ]
+  ]
+}

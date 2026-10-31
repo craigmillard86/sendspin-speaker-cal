@@ -1,0 +1,14 @@
+{
+  "domain": "speaker_tuner",
+  "name": "Speaker Tuner",
+  "codeowners": ["@craigmillard86"],
+  "config_flow": true,
+  "dependencies": ["http", "frontend", "panel_custom"],
+  "documentation": "https://github.com/craigmillard86/sendspin-speaker-cal",
+  "integration_type": "service",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/craigmillard86/sendspin-speaker-cal/issues",
+  "requirements": [],
+  "single_config_entry": true,
+  "version": "0.1.0"
+}

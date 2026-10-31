@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "target.schema.json",
+  "title": "Speaker Tuner target curve",
+  "type": "object",
+  "required": ["name", "points"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "id": { "type": "string" },
+    "name": { "type": "string", "minLength": 1 },
+    "points": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 },
+      "description": "[frequency in Hz, dB] pairs; the curve is shifted to 0 dB at 1 kHz"
+    }
+  }
+}

@@ -11,7 +11,7 @@ import { fitPeq, tierRules } from '../dsp/fit.js';
 import { fitGraphic } from '../dsp/graphic-fit.js';
 import { targetDb as targetCurve } from '../dsp/target.js';
 import { rmsDeviation } from '../dsp/metrics.js';
-import { bankFilters, bankValues } from '../profiles/profile.js';
+import { bankFilters, bankValues, activeBanks, mirrorValues } from '../profiles/profile.js';
 
 /**
  * @typedef {{ tier: 'calibrated' | 'uncalibrated' | 'unknown', range_hz?: [number, number], gain_db?: [number, number],
@@ -40,7 +40,7 @@ export function micRules(mic) {
  */
 export function fitBanks(profile, crossoverHz) {
   const third = Math.pow(2, 1 / 3);
-  const parametric = profile.peq_banks.filter((b) => b.type !== 'graphic');
+  const parametric = activeBanks(profile).filter((b) => b.type !== 'graphic');
   const split = parametric.some((b) => b.domain === 'below_crossover' || b.domain === 'above_crossover');
   return {
     banks: parametric.map((b) => ({
@@ -60,7 +60,7 @@ export function fitBanks(profile, crossoverHz) {
 export function currentPeqDb(profile, values, freqs) {
   const fs = profile.dsp_sample_rate ?? 96000;
   const out = new Float64Array(freqs.length);
-  for (const bank of profile.peq_banks) {
+  for (const bank of activeBanks(profile)) {
     const r = responseDb(bankFilters(profile, values, bank.id), freqs, fs);
     for (let i = 0; i < out.length; i++) out[i] += r[i];
   }
@@ -95,7 +95,7 @@ export function planPeqFit({ profile, values, rangeOf, curve, target, mic, boost
   const predicted = Float64Array.from(raw);
   const rmsBefore = rmsDeviation(freqs, measured.db, tgt, rules.fMin, rules.fMax, fitMask);
 
-  const parametric = profile.peq_banks.filter((b) => b.type !== 'graphic');
+  const parametric = activeBanks(profile).filter((b) => b.type !== 'graphic');
   /** @type {import('../dsp/fit.js').FitResult | null} */
   let peqResult = null;
   if (parametric.length) {
@@ -110,7 +110,7 @@ export function planPeqFit({ profile, values, rangeOf, curve, target, mic, boost
     for (let i = 0; i < predicted.length; i++) predicted[i] += peqResult.filterDb[i];
   }
 
-  for (const bank of profile.peq_banks.filter((b) => b.type === 'graphic')) {
+  for (const bank of activeBanks(profile).filter((b) => b.type === 'graphic')) {
     const bands = (bank.frequencies ?? []).map((f, i) => ({ f, q: bank.q?.[i] ?? 1, gain: rangeOf(`${bank.role_prefix}${i + 1}_gain`) }));
     // graphic banks fit what the parametric banks left over
     const residual = Float64Array.from(predicted);
@@ -118,6 +118,8 @@ export function planPeqFit({ profile, values, rangeOf, curve, target, mic, boost
     g.gains.forEach((gain, i) => (changes[`${bank.role_prefix}${i + 1}_gain`] = gain));
     for (let i = 0; i < predicted.length; i++) predicted[i] += g.filterDb[i];
   }
+
+  Object.assign(changes, mirrorValues(profile, changes));
 
   return {
     changes,

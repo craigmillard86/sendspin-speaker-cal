@@ -1,0 +1,7 @@
+{
+  "$schema": "../schema/mic.schema.json",
+  "id": "av-receiver",
+  "name": "AV receiver setup mic",
+  "tier": "uncalibrated",
+  "notes": "The small mic that came with an AV receiver (Audyssey, YPAO, MCACC, Dirac). Usually fine in the midrange, unreliable at the frequency extremes."
+}

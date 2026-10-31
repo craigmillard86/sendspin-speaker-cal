@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "device-mapping.schema.json",
+  "title": "Speaker Tuner device mapping",
+  "description": "Links one real speaker's Home Assistant entities to the roles of a profile. Personal: share profiles, not mappings.",
+  "type": "object",
+  "required": ["id", "name", "profile", "entities"],
+  "properties": {
+    "id": { "type": "string" },
+    "name": { "type": "string" },
+    "profile": { "type": "string", "description": "Profile id" },
+    "device_id": { "type": "string" },
+    "entities": { "type": "object", "additionalProperties": { "type": "string", "pattern": "^[a-z_]+\\.[a-z0-9_]+$" } },
+    "media_url": { "type": "string" }
+  }
+}

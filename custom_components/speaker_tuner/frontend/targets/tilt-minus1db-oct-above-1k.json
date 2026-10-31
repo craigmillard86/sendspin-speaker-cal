@@ -1,0 +1,19 @@
+{
+  "$schema": "../schema/target.schema.json",
+  "id": "tilt-minus1db-oct-above-1k",
+  "name": "Gentle tilt (-1 dB/octave above 1 kHz)",
+  "points": [
+    [
+      20,
+      0
+    ],
+    [
+      1000,
+      0
+    ],
+    [
+      20000,
+      -4.32
+    ]
+  ]
+}

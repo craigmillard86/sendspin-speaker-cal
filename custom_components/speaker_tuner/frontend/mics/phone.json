@@ -1,0 +1,7 @@
+{
+  "$schema": "../schema/mic.schema.json",
+  "id": "phone",
+  "name": "Phone or laptop built-in mic",
+  "tier": "unknown",
+  "notes": "Built-in mics roll off the bass and often still process audio. Only cuts over 3 dB between 300 Hz and 8 kHz are made."
+}

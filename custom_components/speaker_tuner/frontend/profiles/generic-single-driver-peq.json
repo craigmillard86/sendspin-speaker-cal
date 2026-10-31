@@ -1,0 +1,71 @@
+{
+  "$schema": "../schema/profile.schema.json",
+  "id": "generic-single-driver-peq",
+  "name": "Generic single driver with 6-band PEQ",
+  "version": 1,
+  "component": "generic",
+  "notes": "Example for a full-range speaker whose ESPHome component exposes PEQ bands as number entities (frequency, gain, Q) and optionally a type select. Copy it and change the hints, ranges and YAML template to match your component.",
+  "enclosure": "sealed",
+  "dsp_sample_rate": 48000,
+  "peq_banks": [
+    {
+      "id": "main",
+      "name": "PEQ",
+      "type": "parametric",
+      "bands": 6,
+      "role_prefix": "peq_",
+      "domain": "full",
+      "ranges": {
+        "frequency": {
+          "min": 20,
+          "max": 20000,
+          "step": 1
+        },
+        "gain": {
+          "min": -12,
+          "max": 12,
+          "step": 0.5
+        },
+        "q": {
+          "min": 0.3,
+          "max": 10,
+          "step": 0.05
+        }
+      },
+      "type_options": {
+        "peaking": "Peaking",
+        "low_shelf": "Low Shelf",
+        "high_shelf": "High Shelf"
+      }
+    }
+  ],
+  "roles": {
+    "media_player": {
+      "domain": "media_player",
+      "label": "Media player that plays the test noise",
+      "group": "playback",
+      "hints": [
+        "player",
+        "media_player"
+      ]
+    },
+    "tuning_mode": {
+      "domain": "switch",
+      "label": "Tuning mode (optional, unlocks DSP entities)",
+      "group": "playback",
+      "hints": [
+        "tuning_mode"
+      ]
+    },
+    "loudness": {
+      "domain": "switch",
+      "label": "Loudness",
+      "group": "playback",
+      "hints": [
+        "loudness"
+      ],
+      "default": false
+    }
+  },
+  "yaml_template": "# Speaker Tuner {{tool_version}}: {{profile_name}}\n# Device: {{device_name}}, exported {{date}}\n#\n# A generic profile can't know your component's YAML, so this exports the values as\n# substitutions. Wire them into your component's config, for example:\n#\n#   my_eq_component:\n#     bands:\n#       - frequency: ${peq_1_frequency}Hz\n#         gain: ${peq_1_gain}dB\n#         q: ${peq_1_q}\n#\n# Better: copy this profile, and replace this template with your component's own\n# config so the export pastes straight in. See \"Writing a profile\" in the README.\n# A band with gain 0 is off.\n\nsubstitutions:\n  peq_1_frequency: \"{{peq_1_frequency}}\"\n  peq_1_gain: \"{{peq_1_gain}}\"\n  peq_1_q: \"{{peq_1_q}}\"\n  peq_1_type: \"{{peq_1_type_code}}\"\n  peq_2_frequency: \"{{peq_2_frequency}}\"\n  peq_2_gain: \"{{peq_2_gain}}\"\n  peq_2_q: \"{{peq_2_q}}\"\n  peq_2_type: \"{{peq_2_type_code}}\"\n  peq_3_frequency: \"{{peq_3_frequency}}\"\n  peq_3_gain: \"{{peq_3_gain}}\"\n  peq_3_q: \"{{peq_3_q}}\"\n  peq_3_type: \"{{peq_3_type_code}}\"\n  peq_4_frequency: \"{{peq_4_frequency}}\"\n  peq_4_gain: \"{{peq_4_gain}}\"\n  peq_4_q: \"{{peq_4_q}}\"\n  peq_4_type: \"{{peq_4_type_code}}\"\n  peq_5_frequency: \"{{peq_5_frequency}}\"\n  peq_5_gain: \"{{peq_5_gain}}\"\n  peq_5_q: \"{{peq_5_q}}\"\n  peq_5_type: \"{{peq_5_type_code}}\"\n  peq_6_frequency: \"{{peq_6_frequency}}\"\n  peq_6_gain: \"{{peq_6_gain}}\"\n  peq_6_q: \"{{peq_6_q}}\"\n  peq_6_type: \"{{peq_6_type_code}}\"\n"
+}

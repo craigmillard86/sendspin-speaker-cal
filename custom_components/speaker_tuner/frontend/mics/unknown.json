@@ -1,0 +1,7 @@
+{
+  "$schema": "../schema/mic.schema.json",
+  "id": "unknown",
+  "name": "Unknown mic",
+  "tier": "unknown",
+  "notes": "Any mic you know nothing about. Only cuts over 3 dB between 300 Hz and 8 kHz are made."
+}

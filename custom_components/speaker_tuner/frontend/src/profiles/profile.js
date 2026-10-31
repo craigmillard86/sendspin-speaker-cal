@@ -15,7 +15,8 @@
  * @typedef {{ min: number, max: number, step: number }} Range
  * @typedef {{ id: string, name?: string, type: 'parametric' | 'graphic', bands?: number, role_prefix: string,
  *   domain?: 'below_crossover' | 'above_crossover' | 'full', ranges?: { frequency: Range, gain: Range, q: Range },
- *   type_options?: Record<string, string>, frequencies?: number[], q?: number[], gain?: Range }} PeqBank
+ *   type_options?: Record<string, string>, frequencies?: number[], q?: number[], gain?: Range, mirror_of?: string }} PeqBank
+ *   mirror_of: this bank is a second channel that is set to the same values as another bank
  * @typedef {{ id: string, name: string, version?: number, component: string, enclosure?: 'sealed' | 'ported' | 'passive_radiator',
  *   dsp_sample_rate?: number, drivers?: Array<{ id: string, name: string }>,
  *   crossover?: { filter_options: Record<string, string> }, peq_banks: PeqBank[], roles: Record<string, RoleSpec>,
@@ -70,6 +71,31 @@ export function expandRoles(profile) {
     }
   }
   return roles;
+}
+
+/**
+ * Banks that are fitted and that shape the sound; mirror banks just copy one of these.
+ * @param {Profile} profile
+ */
+export function activeBanks(profile) {
+  return (profile.peq_banks ?? []).filter((b) => !b.mirror_of);
+}
+
+/**
+ * Role values for mirror banks, copied from the banks they mirror.
+ * @param {Profile} profile @param {Record<string, any>} changes
+ */
+export function mirrorValues(profile, changes) {
+  /** @type {Record<string, any>} */
+  const out = {};
+  for (const bank of profile.peq_banks ?? []) {
+    const source = bank.mirror_of && profile.peq_banks.find((b) => b.id === bank.mirror_of);
+    if (!source) continue;
+    for (const [role, value] of Object.entries(changes)) {
+      if (role.startsWith(source.role_prefix)) out[bank.role_prefix + role.slice(source.role_prefix.length)] = value;
+    }
+  }
+  return out;
 }
 
 /**

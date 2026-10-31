@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "profile.schema.json",
+  "title": "Speaker Tuner speaker profile",
+  "description": "What a speaker type can do: its DSP roles, value ranges, PEQ banks and YAML export template. Holds no entity IDs; those live in a device mapping.",
+  "type": "object",
+  "required": ["id", "name", "component", "peq_banks", "roles"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$", "description": "Short unique ID, lowercase with dashes" },
+    "name": { "type": "string", "minLength": 1 },
+    "version": { "type": "integer", "minimum": 1 },
+    "component": { "type": "string", "description": "tas58xx-crossover, tas58xx-graphic or generic. Only tas58xx-crossover gets the crossover model and fork checks." },
+    "notes": { "type": "string" },
+    "enclosure": { "enum": ["sealed", "ported", "passive_radiator"] },
+    "dsp_sample_rate": { "type": "number", "minimum": 8000 },
+    "drivers": {
+      "type": "array",
+      "items": { "type": "object", "required": ["id", "name"], "properties": { "id": { "type": "string" }, "name": { "type": "string" } } }
+    },
+    "crossover": {
+      "type": "object",
+      "properties": { "filter_options": { "$ref": "#/$defs/options" } }
+    },
+    "peq_banks": { "type": "array", "items": { "$ref": "#/$defs/bank" } },
+    "roles": { "type": "object", "additionalProperties": { "$ref": "#/$defs/role" } },
+    "defaults": { "type": "object" },
+    "yaml_template": { "type": "string" }
+  },
+  "$defs": {
+    "range": {
+      "type": "object",
+      "required": ["min", "max", "step"],
+      "properties": { "min": { "type": "number" }, "max": { "type": "number" }, "step": { "type": "number", "minimum": 0 } }
+    },
+    "options": {
+      "type": "object",
+      "description": "Code to the label HA shows, e.g. {\"LR4\": \"LR4 24dB/oct\"}",
+      "additionalProperties": { "type": "string" }
+    },
+    "role": {
+      "type": "object",
+      "required": ["domain"],
+      "properties": {
+        "domain": { "enum": ["number", "switch", "select", "button", "sensor", "media_player"] },
+        "label": { "type": "string" },
+        "group": { "type": "string" },
+        "min": { "type": "number" },
+        "max": { "type": "number" },
+        "step": { "type": "number" },
+        "unit": { "type": "string" },
+        "options": { "$ref": "#/$defs/options" },
+        "hints": { "type": "array", "items": { "type": "string" }, "description": "Words in the entity name or ID that discovery looks for" },
+        "avoid": { "type": "array", "items": { "type": "string" }, "description": "Entities containing these words never match" },
+        "default": {}
+      }
+    },
+    "bank": {
+      "type": "object",
+      "required": ["id", "type", "role_prefix"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "enum": ["parametric", "graphic"] },
+        "bands": { "type": "integer", "minimum": 1, "maximum": 32 },
+        "role_prefix": { "type": "string", "minLength": 1 },
+        "domain": { "enum": ["below_crossover", "above_crossover", "full"] },
+        "ranges": {
+          "type": "object",
+          "properties": { "frequency": { "$ref": "#/$defs/range" }, "gain": { "$ref": "#/$defs/range" }, "q": { "$ref": "#/$defs/range" } }
+        },
+        "type_options": { "$ref": "#/$defs/options" },
+        "frequencies": { "type": "array", "items": { "type": "number", "minimum": 1 } },
+        "q": { "type": "array", "items": { "type": "number", "minimum": 0.05 } },
+        "gain": { "$ref": "#/$defs/range" },
+        "mirror_of": { "type": "string" }
+      }
+    }
+  }
+}

@@ -4,7 +4,7 @@
 
 import { simulateTwoWay, simulateSingle, simulatedBackground } from './simulated-speaker.js';
 import { measurementFromPositions } from '../measure/record.js';
-import { crossoverSettings, expandRoles, bankFilters } from '../profiles/profile.js';
+import { crossoverSettings, expandRoles, bankFilters, activeBanks } from '../profiles/profile.js';
 import { sleep } from '../measure/session.js';
 
 export class SimMeasurer {
@@ -62,7 +62,7 @@ export class SimMeasurer {
       };
       const curve = this.profile.component === 'tas58xx-crossover'
         ? simulateTwoWay(crossoverSettings(this.profile, values), options)
-        : simulateSingle(this.profile.peq_banks.flatMap((b) => bankFilters(this.profile, values, b.id)), options);
+        : simulateSingle(activeBanks(this.profile).flatMap((b) => bankFilters(this.profile, values, b.id)), options);
       takes.push({ curve, background: simulatedBackground() });
     }
     return measurementFromPositions(req, takes, { mic: this.mic, volume });

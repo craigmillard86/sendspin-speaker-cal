@@ -1,0 +1,15 @@
+{
+  "$schema": "../schema/mic.schema.json",
+  "id": "akg-ck32",
+  "name": "AKG CK32 (omni capsule, no cal file)",
+  "tier": "uncalibrated",
+  "range_hz": [
+    100,
+    12000
+  ],
+  "gain_db": [
+    -10,
+    3
+  ],
+  "notes": "Omnidirectional condenser capsule; needs phantom power through an XLR interface. Its response is close to flat, but without an individual cal file the tool stays conservative: 100 Hz to 12 kHz, boosts up to +3 dB. If you have a cal file for your capsule, load it and choose the calibrated tier."
+}

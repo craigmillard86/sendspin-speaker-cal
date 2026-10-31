@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mic.schema.json",
+  "title": "Speaker Tuner mic profile",
+  "type": "object",
+  "required": ["id", "name", "tier"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+    "name": { "type": "string", "minLength": 1 },
+    "tier": { "enum": ["calibrated", "uncalibrated", "unknown"], "description": "Sets the default fit range and gain limits" },
+    "range_hz": { "type": "array", "items": { "type": "number", "minimum": 10 }, "minItems": 2, "maxItems": 2, "description": "Overrides the tier's fit range" },
+    "gain_db": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2, "description": "Overrides the tier's [lowest cut, highest boost]" },
+    "cuts_only": { "type": "boolean" },
+    "min_deviation_db": { "type": "number", "minimum": 0 },
+    "needs_cal_file": { "type": "boolean" },
+    "cal": {
+      "type": "object",
+      "required": ["freqs", "db"],
+      "properties": { "freqs": { "type": "array", "items": { "type": "number" } }, "db": { "type": "array", "items": { "type": "number" } } }
+    },
+    "notes": { "type": "string" }
+  }
+}

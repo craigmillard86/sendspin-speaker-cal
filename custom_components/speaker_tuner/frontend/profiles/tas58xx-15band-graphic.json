@@ -1,0 +1,336 @@
+{
+  "$schema": "../schema/profile.schema.json",
+  "id": "tas58xx-15band-graphic",
+  "name": "tas58xx 15-band graphic EQ (mrtoy-me/esphome-tas58xx)",
+  "version": 1,
+  "component": "tas58xx-graphic",
+  "notes": "For Sonocotta TAS5805M/TAS5825M boards using the 15-band EQ gain numbers (EQ Mode: EQ 15 Band or BIAMP). Gains only, at fixed frequencies; the right channel is set to match the left. Set EQ Mode to the 15-band mode in Home Assistant before tuning.",
+  "enclosure": "sealed",
+  "dsp_sample_rate": 96000,
+  "peq_banks": [
+    {
+      "id": "left",
+      "name": "Left EQ",
+      "type": "graphic",
+      "role_prefix": "left_eq_",
+      "frequencies": [
+        20,
+        31.5,
+        50,
+        80,
+        125,
+        200,
+        315,
+        500,
+        800,
+        1250,
+        2000,
+        3150,
+        5000,
+        8000,
+        16000
+      ],
+      "q": [
+        2,
+        2,
+        1.5,
+        1.5,
+        1,
+        1,
+        0.9,
+        0.9,
+        0.8,
+        0.8,
+        0.7,
+        0.7,
+        0.6,
+        0.6,
+        0.5
+      ],
+      "gain": {
+        "min": -15,
+        "max": 15,
+        "step": 1
+      }
+    },
+    {
+      "id": "right",
+      "name": "Right EQ",
+      "type": "graphic",
+      "role_prefix": "right_eq_",
+      "frequencies": [
+        20,
+        31.5,
+        50,
+        80,
+        125,
+        200,
+        315,
+        500,
+        800,
+        1250,
+        2000,
+        3150,
+        5000,
+        8000,
+        16000
+      ],
+      "q": [
+        2,
+        2,
+        1.5,
+        1.5,
+        1,
+        1,
+        0.9,
+        0.9,
+        0.8,
+        0.8,
+        0.7,
+        0.7,
+        0.6,
+        0.6,
+        0.5
+      ],
+      "gain": {
+        "min": -15,
+        "max": 15,
+        "step": 1
+      },
+      "mirror_of": "left"
+    }
+  ],
+  "roles": {
+    "media_player": {
+      "domain": "media_player",
+      "label": "Media player that plays the test noise",
+      "group": "playback",
+      "hints": [
+        "player"
+      ],
+      "avoid": [
+        "sendspin",
+        "group"
+      ]
+    },
+    "tuning_mode": {
+      "domain": "switch",
+      "label": "Tuning mode (optional)",
+      "group": "playback",
+      "hints": [
+        "tuning_mode"
+      ]
+    },
+    "left_eq_1_gain": {
+      "domain": "number",
+      "hints": [
+        "left_gain_20hz",
+        "left_eq_gain_20hz"
+      ]
+    },
+    "left_eq_2_gain": {
+      "domain": "number",
+      "hints": [
+        "left_gain_31_5hz",
+        "left_eq_gain_31_5hz"
+      ]
+    },
+    "left_eq_3_gain": {
+      "domain": "number",
+      "hints": [
+        "left_gain_50hz",
+        "left_eq_gain_50hz"
+      ]
+    },
+    "left_eq_4_gain": {
+      "domain": "number",
+      "hints": [
+        "left_gain_80hz",
+        "left_eq_gain_80hz"
+      ]
+    },
+    "left_eq_5_gain": {
+      "domain": "number",
+      "hints": [
+        "left_gain_125hz",
+        "left_eq_gain_125hz"
+      ]
+    },
+    "left_eq_6_gain": {
+      "domain": "number",
+      "hints": [
+        "left_gain_200hz",
+        "left_eq_gain_200hz"
+      ]
+    },
+    "left_eq_7_gain": {
+      "domain": "number",
+      "hints": [
+        "left_gain_315hz",
+        "left_eq_gain_315hz"
+      ]
+    },
+    "left_eq_8_gain": {
+      "domain": "number",
+      "hints": [
+        "left_gain_500hz",
+        "left_eq_gain_500hz"
+      ]
+    },
+    "left_eq_9_gain": {
+      "domain": "number",
+      "hints": [
+        "left_gain_800hz",
+        "left_eq_gain_800hz"
+      ]
+    },
+    "left_eq_10_gain": {
+      "domain": "number",
+      "hints": [
+        "left_gain_1250hz",
+        "left_eq_gain_1250hz"
+      ]
+    },
+    "left_eq_11_gain": {
+      "domain": "number",
+      "hints": [
+        "left_gain_2000hz",
+        "left_eq_gain_2000hz"
+      ]
+    },
+    "left_eq_12_gain": {
+      "domain": "number",
+      "hints": [
+        "left_gain_3150hz",
+        "left_eq_gain_3150hz"
+      ]
+    },
+    "left_eq_13_gain": {
+      "domain": "number",
+      "hints": [
+        "left_gain_5000hz",
+        "left_eq_gain_5000hz"
+      ]
+    },
+    "left_eq_14_gain": {
+      "domain": "number",
+      "hints": [
+        "left_gain_8000hz",
+        "left_eq_gain_8000hz"
+      ]
+    },
+    "left_eq_15_gain": {
+      "domain": "number",
+      "hints": [
+        "left_gain_16000hz",
+        "left_eq_gain_16000hz"
+      ]
+    },
+    "right_eq_1_gain": {
+      "domain": "number",
+      "hints": [
+        "right_gain_20hz",
+        "right_eq_gain_20hz"
+      ]
+    },
+    "right_eq_2_gain": {
+      "domain": "number",
+      "hints": [
+        "right_gain_31_5hz",
+        "right_eq_gain_31_5hz"
+      ]
+    },
+    "right_eq_3_gain": {
+      "domain": "number",
+      "hints": [
+        "right_gain_50hz",
+        "right_eq_gain_50hz"
+      ]
+    },
+    "right_eq_4_gain": {
+      "domain": "number",
+      "hints": [
+        "right_gain_80hz",
+        "right_eq_gain_80hz"
+      ]
+    },
+    "right_eq_5_gain": {
+      "domain": "number",
+      "hints": [
+        "right_gain_125hz",
+        "right_eq_gain_125hz"
+      ]
+    },
+    "right_eq_6_gain": {
+      "domain": "number",
+      "hints": [
+        "right_gain_200hz",
+        "right_eq_gain_200hz"
+      ]
+    },
+    "right_eq_7_gain": {
+      "domain": "number",
+      "hints": [
+        "right_gain_315hz",
+        "right_eq_gain_315hz"
+      ]
+    },
+    "right_eq_8_gain": {
+      "domain": "number",
+      "hints": [
+        "right_gain_500hz",
+        "right_eq_gain_500hz"
+      ]
+    },
+    "right_eq_9_gain": {
+      "domain": "number",
+      "hints": [
+        "right_gain_800hz",
+        "right_eq_gain_800hz"
+      ]
+    },
+    "right_eq_10_gain": {
+      "domain": "number",
+      "hints": [
+        "right_gain_1250hz",
+        "right_eq_gain_1250hz"
+      ]
+    },
+    "right_eq_11_gain": {
+      "domain": "number",
+      "hints": [
+        "right_gain_2000hz",
+        "right_eq_gain_2000hz"
+      ]
+    },
+    "right_eq_12_gain": {
+      "domain": "number",
+      "hints": [
+        "right_gain_3150hz",
+        "right_eq_gain_3150hz"
+      ]
+    },
+    "right_eq_13_gain": {
+      "domain": "number",
+      "hints": [
+        "right_gain_5000hz",
+        "right_eq_gain_5000hz"
+      ]
+    },
+    "right_eq_14_gain": {
+      "domain": "number",
+      "hints": [
+        "right_gain_8000hz",
+        "right_eq_gain_8000hz"
+      ]
+    },
+    "right_eq_15_gain": {
+      "domain": "number",
+      "hints": [
+        "right_gain_16000hz",
+        "right_eq_gain_16000hz"
+      ]
+    }
+  },
+  "yaml_template": "# Speaker Tuner {{tool_version}}: {{profile_name}}\n# Device: {{device_name}}, exported {{date}}\n#\n# The tas58xx 15-band EQ saves the gains you set from Home Assistant on the device, so\n# they survive reboots and reflashing. The component has no YAML setting for them, so\n# these substitutions are a record of the tuning: keep them with your device YAML, and\n# use Speaker Tuner's \"Copy to another device\" to set a second speaker the same way.\n\nsubstitutions:\n  left_eq_gain_20hz: \"{{left_eq_1_gain}}\"\n  left_eq_gain_31_5hz: \"{{left_eq_2_gain}}\"\n  left_eq_gain_50hz: \"{{left_eq_3_gain}}\"\n  left_eq_gain_80hz: \"{{left_eq_4_gain}}\"\n  left_eq_gain_125hz: \"{{left_eq_5_gain}}\"\n  left_eq_gain_200hz: \"{{left_eq_6_gain}}\"\n  left_eq_gain_315hz: \"{{left_eq_7_gain}}\"\n  left_eq_gain_500hz: \"{{left_eq_8_gain}}\"\n  left_eq_gain_800hz: \"{{left_eq_9_gain}}\"\n  left_eq_gain_1250hz: \"{{left_eq_10_gain}}\"\n  left_eq_gain_2000hz: \"{{left_eq_11_gain}}\"\n  left_eq_gain_3150hz: \"{{left_eq_12_gain}}\"\n  left_eq_gain_5000hz: \"{{left_eq_13_gain}}\"\n  left_eq_gain_8000hz: \"{{left_eq_14_gain}}\"\n  left_eq_gain_16000hz: \"{{left_eq_15_gain}}\"\n  right_eq_gain_20hz: \"{{right_eq_1_gain}}\"\n  right_eq_gain_31_5hz: \"{{right_eq_2_gain}}\"\n  right_eq_gain_50hz: \"{{right_eq_3_gain}}\"\n  right_eq_gain_80hz: \"{{right_eq_4_gain}}\"\n  right_eq_gain_125hz: \"{{right_eq_5_gain}}\"\n  right_eq_gain_200hz: \"{{right_eq_6_gain}}\"\n  right_eq_gain_315hz: \"{{right_eq_7_gain}}\"\n  right_eq_gain_500hz: \"{{right_eq_8_gain}}\"\n  right_eq_gain_800hz: \"{{right_eq_9_gain}}\"\n  right_eq_gain_1250hz: \"{{right_eq_10_gain}}\"\n  right_eq_gain_2000hz: \"{{right_eq_11_gain}}\"\n  right_eq_gain_3150hz: \"{{right_eq_12_gain}}\"\n  right_eq_gain_5000hz: \"{{right_eq_13_gain}}\"\n  right_eq_gain_8000hz: \"{{right_eq_14_gain}}\"\n  right_eq_gain_16000hz: \"{{right_eq_15_gain}}\"\n"
+}

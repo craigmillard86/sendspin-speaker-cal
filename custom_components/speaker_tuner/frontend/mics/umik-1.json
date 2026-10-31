@@ -1,0 +1,8 @@
+{
+  "$schema": "../schema/mic.schema.json",
+  "id": "umik-1",
+  "name": "miniDSP UMIK-1 (with its cal file)",
+  "tier": "calibrated",
+  "needs_cal_file": true,
+  "notes": "Download the cal file for your mic's serial number from miniDSP. Use the 0 degree file when the mic points at the speaker, the 90 degree file when it points at the ceiling. The UMIK-1 is a USB mic and works on phones with a USB-C OTG adapter."
+}
