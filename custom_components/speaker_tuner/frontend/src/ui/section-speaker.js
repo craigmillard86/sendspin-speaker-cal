@@ -44,12 +44,13 @@ export function renderSpeaker(app) {
   const speakers = select(
     [{ value: '', label: 'New speaker…' }, ...app.mappings.map((m) => ({ value: m.id, label: m.name }))],
     app.settings.mappingId,
-    async (id) => {
+    // switching speakers also stops following the old one (no measuring a speaker that
+    // isn't on screen); never while a task is using it
+    (id) => app.run(id ? 'Switching speaker' : 'New speaker', async () => {
       /** @type {any} */ (app).draft = null;
-      if (id) await app.useMapping(id);
-      else app.settings.mappingId = '';
-      app.refresh();
-    },
+      await app.useMapping(id);
+    }),
+    { disabled: !!app.busy },
   );
 
   const profiles = select(Object.values(app.profiles).map((p) => ({ value: p.id, label: p.name })), d.profile, (id) => {
@@ -116,14 +117,13 @@ export function renderSpeaker(app) {
       devices.length ? select([{ value: '', label: 'Pick the ESPHome device…' }, ...devices.map((/** @type {any} */ x) => ({ value: x.id, label: `${x.name}${x.model ? ` (${x.model})` : ''}` }))], d.device_id ?? '', pickDevice) : null),
     !ready ? h('p', { class: 'help' }, 'Connect to Home Assistant first, or try the demo.') : null,
     profile ? roleEditor(app, d, profile) : null,
-    h('div', { class: 'row' }, h('button', { class: 'primary', onclick: saveDraft, disabled: !profile }, 'Save speaker'),
-      app.mapping && !app.demo ? h('button', { class: 'link danger-text', onclick: () => {
+    h('div', { class: 'row' }, h('button', { class: 'primary', onclick: saveDraft, disabled: !profile || !!app.busy }, 'Save speaker'),
+      app.mapping && !app.demo ? h('button', { class: 'link danger-text', disabled: !!app.busy, onclick: () => app.run('Forgetting the speaker', async () => {
         app.mappings = app.mappings.filter((m) => m.id !== app.mapping?.id);
-        app.settings.mappingId = '';
         /** @type {any} */ (app).draft = null;
+        await app.useMapping('');
         app.persist();
-        app.refresh();
-      } }, 'Forget this speaker') : null),
+      }) }, 'Forget this speaker') : null),
     noiseFile(app, d),
   ];
   const summary = app.mapping ? `${app.mapping.name} · ${app.profile?.name ?? 'unknown profile'}` : 'No speaker set up';

@@ -86,8 +86,10 @@ export function renderMic(app) {
     app.refresh('mic');
     app.updateChart();
   });
-  const editor = /** @type {HTMLTextAreaElement} */ (h('textarea', { rows: 5, spellcheck: false },
-    app.target.points.map((/** @type {number[]} */ p) => `${p[0]} ${p[1]}`).join('\n')));
+  // typed points survive re-renders until saved or another target is picked
+  const tform = (app.ui.target ??= { for: '', text: '', open: false });
+  if (tform.for !== app.settings.target) Object.assign(tform, { for: app.settings.target, text: app.target.points.map((/** @type {number[]} */ p) => `${p[0]} ${p[1]}`).join('\n') });
+  const editor = /** @type {HTMLTextAreaElement} */ (h('textarea', { rows: 5, spellcheck: false, oninput: () => (tform.text = editor.value) }, tform.text));
   const saveTarget = () => {
     try {
       const points = editor.value.split('\n').map((l) => l.trim()).filter(Boolean).map((l) => l.split(/[\s,;]+/).map(Number));
@@ -143,7 +145,7 @@ export function renderMic(app) {
       } }, 'Remove') : null),
     app.settings.tier === 'calibrated' && !app.cal ? h('p', { class: 'notice notice-warn' }, 'Calibrated tier without a cal file: the fit will trust the mic\'s extremes. Load the cal file, or pick a lower tier.') : null,
     field('Target curve', targets),
-    h('details', null, h('summary', null, 'Edit target points'),
+    h('details', { open: tform.open, ontoggle: (/** @type {any} */ e) => (tform.open = e.target.open) }, h('summary', null, 'Edit target points'),
       h('p', { class: 'help' }, 'One "frequency dB" pair per line. The curve is shifted to 0 dB at 1 kHz.'), editor,
       h('button', { onclick: saveTarget }, 'Save as a custom target')),
     h('div', { class: 'row' },

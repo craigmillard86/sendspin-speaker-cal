@@ -12,6 +12,7 @@ class SpeakerTunerPanel extends HTMLElement {
     this._hass = null;
     /** @type {TunerApp | null} */
     this.app = null;
+    this._narrow = false;
     this.attachShadow({ mode: 'open' });
   }
 
@@ -23,13 +24,33 @@ class SpeakerTunerPanel extends HTMLElement {
     this.applyTheme();
   }
 
+  /** HA sets this on phones, where the sidebar is hidden and the panel needs a menu button. */
+  set narrow(narrow) {
+    this._narrow = !!narrow;
+    const menu = this.shadowRoot?.querySelector('.ha-menu');
+    if (menu instanceof HTMLElement) menu.hidden = !this._narrow;
+  }
+
+  disconnectedCallback() {
+    // HA removed the panel (navigated away): close the mic and stop following HA. The next
+    // `hass` it receives (when shown again) starts a fresh app.
+    this.app?.dispose();
+    this.app = null;
+    this._hass = null;
+    this.shadowRoot?.replaceChildren();
+  }
+
   get hass() {
     return this._hass;
   }
 
   applyTheme() {
     const page = this.shadowRoot?.querySelector('.page');
-    if (page) page.setAttribute('data-theme', this._hass?.themes?.darkMode ? 'dark' : 'light');
+    if (!page) return;
+    const theme = this._hass?.themes?.darkMode ? 'dark' : 'light';
+    if (page.getAttribute('data-theme') === theme) return;
+    page.setAttribute('data-theme', theme);
+    this.app?.chart?.draw(); // canvas colours come from the theme
   }
 
   start() {
@@ -41,7 +62,14 @@ class SpeakerTunerPanel extends HTMLElement {
     style.textContent = ':host { display: block; height: 100%; overflow: auto; background: var(--primary-background-color); }';
     root.append(css, style);
     this.app = new TunerApp(root, { mode: 'panel', api: new HaApi(transportFromHass(this._hass)) });
-    this.app.start().then(() => this.applyTheme()).catch((e) => {
+    this.app.start().then(() => {
+      // a menu button in the header on phones, like HA's own panels have
+      const menu = Object.assign(document.createElement('button'), { className: 'ha-menu link', textContent: '☰', title: 'Menu', hidden: !this._narrow });
+      menu.setAttribute('aria-label', 'Open the Home Assistant menu');
+      menu.addEventListener('click', () => this.dispatchEvent(new Event('hass-toggle-menu', { bubbles: true, composed: true })));
+      root.querySelector('.top')?.prepend(menu);
+      this.applyTheme();
+    }).catch((e) => {
       root.append(Object.assign(document.createElement('p'), { textContent: `Speaker Tuner failed to start: ${e.message}` }));
       console.error(e);
     });

@@ -70,7 +70,9 @@ export class TunerApp {
     this.cal = store.load('cal', null);
     this.measurements = store.loadMeasurements();
     /** @type {Set<string>} */
-    this.visible = new Set(this.measurements.slice(-2).map((m) => m.id));
+    this.visible = new Set(store.load('visible', null) ?? this.measurements.slice(-2).map((m) => m.id));
+    /** form fields the user is filling in, kept across re-renders */
+    this.ui = {};
     /** @type {Session | null} */
     this.session = store.load('session', null);
     /** @type {DspWriter | null} */
@@ -90,6 +92,8 @@ export class TunerApp {
     this.sections = {};
     /** @type {any} */
     this._settingsTimer = 0;
+    /** @type {Promise<any> | null} the running task */
+    this.task = null;
     /** loudness was switched off for measuring and goes back on when the task ends */
     this.restoreLoudness = false;
     /** @type {Record<string, (app: TunerApp) => HTMLElement>} */
@@ -221,7 +225,16 @@ export class TunerApp {
     store.save('settings', this.settings);
     store.save('mappings', this.mappings.filter((m) => m.id !== 'demo'));
     store.save('session', this.session);
-    store.saveMeasurements(this.measurements.slice(-60));
+    // keep every real measurement (up to 150) but only the last 20 scan tests: one delay scan
+    // alone makes about 30, and they must not push the baseline out
+    const tests = this.measurements.filter((m) => m.test);
+    const keepTests = new Set(tests.slice(-20).map((m) => m.id));
+    const kept = this.measurements.filter((m) => !m.test || keepTests.has(m.id));
+    const real = kept.filter((m) => !m.test);
+    const dropReal = new Set(real.slice(0, Math.max(0, real.length - 150)).map((m) => m.id));
+    const toSave = kept.filter((m) => !dropReal.has(m.id));
+    if (!store.saveMeasurements(toSave)) this.notify('This browser would not save the measurements (storage full or blocked). Export them as JSON to keep them.', 'warn');
+    store.save('visible', [...this.visible]);
   }
 
   /** @param {DeviceMapping} mapping */
@@ -237,6 +250,9 @@ export class TunerApp {
     /** @type {any} */ (this).draft = null;
     await this.writer?.stop();
     this.writer = null;
+    this.plan = null;
+    this.preview = null;
+    this.results = {};
     const m = this.mapping;
     const profile = this.profile;
     if (!m || !profile || !this.api) return;
@@ -247,11 +263,36 @@ export class TunerApp {
     this.checkMutes();
   }
 
+  /** A mapped entity changed in HA: show it in Speaker settings and Export, without
+   *  disturbing anything the user is editing. */
   scheduleSettingsRefresh() {
     clearTimeout(this._settingsTimer);
     this._settingsTimer = setTimeout(() => {
-      if (!this.busy) this.refresh('settings');
+      if (this.busy) return;
+      for (const name of ['settings', 'export']) {
+        // never replace a section while the user is typing in it: removing a focused input
+        // blurs it, and the blur would write the half-typed value to the speaker
+        if (this.sections[name]?.contains(this.activeElement())) this.scheduleSettingsRefresh();
+        else this.refresh(name);
+      }
     }, 300);
+  }
+
+  /** The focused element, inside the panel's shadow root too. */
+  activeElement() {
+    return this.root instanceof ShadowRoot ? this.root.activeElement : document.activeElement;
+  }
+
+  /** Close the mic, stop following HA and stop any task (the HA panel was removed). */
+  async dispose() {
+    this.abort?.abort('stopped');
+    clearTimeout(this._settingsTimer);
+    // let a stopped task put its test values back (that needs the writer still listening)
+    if (this.task) await Promise.race([this.task, new Promise((r) => setTimeout(r, 15000))]);
+    await this.recorder?.close().catch(() => {});
+    this.recorder = null;
+    await this.writer?.stop().catch(() => {});
+    this.writer = null;
   }
 
   /** @returns {import('../measure/session.js').Measurer} */
@@ -351,7 +392,8 @@ export class TunerApp {
     this.status(label);
     this.refresh();
     try {
-      await whileAwake(task, this.abort.signal);
+      this.task = whileAwake(task, this.abort.signal);
+      await this.task;
     } catch (e) {
       const err = /** @type {any} */ (e);
       const reason = this.abort?.signal.reason;
@@ -371,6 +413,7 @@ export class TunerApp {
       }
       this.busy = '';
       this.abort = null;
+      this.task = null;
       this.status('');
       this.refresh();
     }
@@ -419,12 +462,27 @@ export class TunerApp {
         signal?.removeEventListener('abort', onAbort);
         dialog.remove();
       };
-      const dialog = h('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true' },
+      const titleId = `dlg${Date.now().toString(36)}`;
+      const cancel = () => {
+        close();
+        reject(stopped());
+      };
+      const dialog = h('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': titleId,
+        onkeydown: (/** @type {KeyboardEvent} */ e) => {
+          if (e.key === 'Escape') cancel();
+          // keep Tab inside the dialog
+          if (e.key === 'Tab') {
+            const buttons = [...dialog.querySelectorAll('button')];
+            const i = buttons.indexOf(/** @type {any} */ (this.activeElement()));
+            e.preventDefault();
+            /** @type {HTMLElement} */ (buttons[(i + (e.shiftKey ? -1 : 1) + buttons.length) % buttons.length])?.focus();
+          }
+        } },
         h('div', { class: 'modal-box' },
-          h('h3', null, title), h('p', null, text),
+          h('h3', { id: titleId }, title), h('p', null, text),
           h('div', { class: 'row' },
             h('button', { class: 'primary', onclick: () => { close(); resolve(undefined); } }, ok),
-            h('button', { onclick: () => { close(); reject(Object.assign(new Error('Stopped'), { name: 'AbortError' })); } }, 'Cancel'))));
+            h('button', { onclick: cancel }, 'Cancel'))));
       this.el.page.append(dialog);
       /** @type {HTMLElement | null} */ (dialog.querySelector('button.primary'))?.focus();
     });
@@ -442,6 +500,7 @@ export class TunerApp {
 
   updateChart() {
     if (!this.chart) return;
+    if (!this.demo) store.save('visible', [...this.visible]);
     const shown = this.measurements.filter((m) => this.visible.has(m.id));
     const firstFull = shown.find((m) => m.kind !== 'nearfield');
     const ref = firstFull ? levelAt1k(firstFull.curve.freqs, firstFull.curve.db) : 0;
@@ -536,7 +595,9 @@ export class TunerApp {
       const old = this.sections[n];
       // keep what the user opened or closed, unless the card's default changed (e.g. setup done)
       if (old instanceof HTMLDetailsElement && next instanceof HTMLDetailsElement && old.dataset.default === next.dataset.default) next.open = old.open;
-      if (old) old.replaceWith(next);
+      // a section can have been replaced already by a refresh that ran in between
+      if (old?.isConnected) old.replaceWith(next);
+      else if (old) continue;
       else this.el.sections.append(next);
       this.sections[n] = next;
     }

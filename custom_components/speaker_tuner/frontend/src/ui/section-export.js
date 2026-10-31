@@ -28,7 +28,7 @@ export function renderExport(app) {
 
   const report = () => {
     const roles = expandRoles(profile);
-    const fulls = app.measurements.filter((m) => m.kind === 'full' && (!app.session || m.time >= app.session.started));
+    const fulls = app.measurements.filter((m) => m.kind === 'full' && !m.test && !m.undone && (!app.session || m.time >= app.session.started));
     const pick = (/** @type {any} */ m) => (m ? { label: m.label, curve: m.curve, rms: curveRms(m.curve, app.target, app.mic) } : null);
     const before = app.session?.snapshot ?? {};
     const changes = settingRoles(profile)

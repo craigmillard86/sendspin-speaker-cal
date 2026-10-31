@@ -13,6 +13,7 @@ import { STORE_GRID } from '../dsp/analyse.js';
  *   background?: { freqs: number[], db: number[] } | null,
  *   snrDb?: number[], spreadDb?: number[], mask?: boolean[],
  *   clipped?: boolean, relevelled?: boolean, settings?: Record<string, any>, source?: string, undone?: boolean,
+ *   test?: boolean,
  * }} MeasurementRecord
  */
 

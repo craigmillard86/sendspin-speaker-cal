@@ -14,13 +14,15 @@ export function renderMeasure(app) {
   const ready = !!app.writer;
   const s = app.session;
   const mutes = app.has('tweeter_mute') && app.has('mid_mute');
-  const label = /** @type {HTMLInputElement} */ (h('input', { value: '', placeholder: `Measurement ${app.measurements.length + 1}` }));
-  let kind = /** @type {'full' | 'tweeter' | 'mid'} */ ('full');
+  // what the user has typed or picked survives the re-render after any task
+  const form = (app.ui.measure ??= { label: '', kind: 'full', positions: app.settings.positions });
+  if (!mutes) form.kind = 'full';
+  const label = /** @type {HTMLInputElement} */ (h('input', { value: form.label, placeholder: `Measurement ${app.measurements.length + 1}`, oninput: () => (form.label = label.value) }));
   const kinds = select([
     { value: 'full', label: 'Whole speaker' },
     ...(mutes ? [{ value: 'tweeter', label: 'Tweeter alone' }, { value: 'mid', label: 'Mid alone' }] : []),
-  ], kind, (v) => (kind = /** @type {any} */ (v)));
-  const positions = /** @type {HTMLInputElement} */ (h('input', { type: 'number', min: 1, max: 9, value: app.settings.positions }));
+  ], form.kind, (v) => (form.kind = v));
+  const positions = /** @type {HTMLInputElement} */ (h('input', { type: 'number', min: 1, max: 9, value: form.positions, oninput: () => (form.positions = Number(positions.value) || 1) }));
 
   const level = () => app.run('Setting the measurement level', async (signal) => {
     const session = await app.ensureSession();
@@ -34,21 +36,24 @@ export function renderMeasure(app) {
   });
 
   const measure = () => app.run('Measuring', async (signal) => {
-    if (!app.session || app.session.levelVolume === null) {
+    // the session (with the volume to return to) starts before levelling changes the volume
+    const session = await app.ensureSession();
+    if (session.levelVolume === null) {
       await app.confirm('Level first?', 'This session has no measurement level yet. Set it now? The speaker will play pink noise and get gradually louder.', 'Set level');
       const r = await app.measurer().autoLevel({ signal, onStatus: (t) => app.status(t) });
-      const session = await app.ensureSession();
       session.levelVolume = r.volume;
       app.persist();
     }
-    const n = Math.max(1, Math.min(9, Number(positions.value) || 1));
+    const n = Math.max(1, Math.min(9, Number(form.positions) || 1));
+    const kind = /** @type {'full' | 'tweeter' | 'mid'} */ (form.kind);
     const m = kind === 'full' ? null : kind;
     const prep = m === 'tweeter' ? { tweeter_mute: false, mid_mute: true } : m === 'mid' ? { tweeter_mute: true, mid_mute: false } : null;
     const writer = /** @type {any} */ (app.writer);
     if (prep) await writer.write(prep, { signal });
     try {
-      const rec = await app.measure({ label: label.value.trim() || `Measurement ${app.measurements.length + 1}`, kind, positions: n }, signal);
+      const rec = await app.measure({ label: form.label.trim() || `Measurement ${app.measurements.length + 1}`, kind, positions: n }, signal);
       app.addMeasurement(rec);
+      form.label = '';
     } finally {
       if (prep) await writer.write({ tweeter_mute: false, mid_mute: false });
     }
@@ -71,10 +76,17 @@ export function renderMeasure(app) {
     try {
       const list = JSON.parse(file.text);
       if (!Array.isArray(list)) throw new Error('Expected a list of measurements.');
+      // check everything first: a file is imported completely or not at all
+      list.forEach((m, i) => {
+        const ok = Array.isArray(m?.curve?.db) && m.curve.db.length === STORE_GRID.length && m.curve.db.every((/** @type {any} */ x) => typeof x === 'number');
+        if (!ok || typeof m.label !== 'string') throw new Error(`Measurement ${i + 1} in that file is not a Speaker Tuner measurement on this tool's frequency grid.`);
+      });
+      const grid = Array.from(STORE_GRID);
       for (const m of list) {
-        if (!m?.curve?.db || m.curve.db.length !== STORE_GRID.length) throw new Error('A measurement in that file is not on this tool\'s frequency grid.');
-        app.addMeasurement({ ...m, id: `${m.id}-i${Date.now().toString(36)}` });
+        app.addMeasurement({ ...m, kind: ['full', 'tweeter', 'mid', 'nearfield'].includes(m.kind) ? m.kind : 'full', id: `${m.id ?? 'm'}-i${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`,
+          curve: { freqs: grid, db: m.curve.db }, background: m.background?.db?.length === grid.length ? { freqs: grid, db: m.background.db } : null });
       }
+      app.notify(`Imported ${list.length} measurement${list.length === 1 ? '' : 's'}.`, 'ok');
     } catch (e) {
       app.notify(/** @type {Error} */ (e).message, 'error');
     }

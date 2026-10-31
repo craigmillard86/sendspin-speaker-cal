@@ -7,7 +7,7 @@ import { card } from './app.js';
 import {
   levelMatch, polarityTest, crossoverScan, delayScan, lowEnd, notchAndAir, baffleSuggestion, boostFloor,
 } from '../measure/driver-checks.js';
-import { planPeqFit, curveRms, micRules } from '../measure/peq.js';
+import { planPeqFit, curveRms, micRules, effectiveBoostFloor } from '../measure/peq.js';
 import { applyAndRefine } from '../measure/refine.js';
 import { settingRoles } from '../profiles/profile.js';
 import { DspWriter } from '../ha/dsp-writer.js';
@@ -21,7 +21,7 @@ import { formatHz } from './chart.js';
 /** @typedef {import('./app.js').TunerApp} App */
 
 /** Measurer that goes through the app (session volume, loudness off), for the guided steps. @param {App} app @param {AbortSignal} signal */
-function ctxFor(app, signal, { positions = app.settings.checkPositions, showAll = false } = {}) {
+function ctxFor(app, signal, { positions = app.settings.checkPositions, showAll = false, test = false } = {}) {
   const inner = app.measurer();
   let shown = 0;
   return {
@@ -32,6 +32,9 @@ function ctxFor(app, signal, { positions = app.settings.checkPositions, showAll 
     onStatus: (/** @type {string} */ t) => app.status(t),
     onPrompt: (/** @type {number} */ i, /** @type {number} */ n) => app.promptPosition(i, n, signal),
     onMeasurement: (/** @type {any} */ m) => {
+      // test measurements (settings changed for a comparison) are kept apart from real ones:
+      // never offered for the fit, the report or A/B, and only the latest few are saved
+      if (test) m.test = true;
       app.addMeasurement(m);
       // scans make many measurements; only the first few stay on the chart
       if (!showAll && ++shown > 2) app.visible.delete(m.id);
@@ -122,15 +125,16 @@ export function renderTune(app) {
   const ready = !!app.writer && !!app.profile;
   const tier = app.mic.tier;
   const isCrossover = app.profile?.component === 'tas58xx-crossover';
-  const fulls = app.measurements.filter((m) => m.kind === 'full' && !(/** @type {any} */ (m).undone));
+  const fulls = app.measurements.filter((m) => m.kind === 'full' && !m.undone && !m.test);
   const latest = (/** @type {string} */ kind) => [...app.measurements].reverse().find((m) => m.kind === kind);
 
   const xoInput = /** @type {HTMLInputElement} */ (h('input', { value: app.settings.crossoverList, onchange: () => {
     app.settings.crossoverList = xoInput.value;
     app.persist();
   } }));
-  const tryFilters = /** @type {HTMLInputElement} */ (h('input', { type: 'checkbox' }));
-  const baffleWidth = /** @type {HTMLInputElement} */ (h('input', { type: 'number', min: 0, max: 50, step: 1, value: app.writer?.value('baffle_width') ?? 0 }));
+  const form = (app.ui.tune ??= { tryFilters: false, baffleWidth: null });
+  const tryFilters = /** @type {HTMLInputElement} */ (h('input', { type: 'checkbox', checked: form.tryFilters, onchange: () => (form.tryFilters = tryFilters.checked) }));
+  const baffleWidth = /** @type {HTMLInputElement} */ (h('input', { type: 'number', min: 0, max: 50, step: 1, value: form.baffleWidth ?? app.writer?.value('baffle_width') ?? 0, oninput: () => (form.baffleWidth = baffleWidth.value) }));
 
   const steps = isCrossover ? [
     step(app, {
@@ -159,7 +163,7 @@ export function renderTune(app) {
     step(app, {
       id: 'polarity', title: '3. Polarity', needs: ['tweeter_invert', 'crossover_frequency'],
       text: 'Measures the sum. If there is a dip of more than 3 dB at the crossover, tries the tweeter the other way round and keeps the flatter one.',
-      run: (signal) => polarityTest(ctxFor(app, signal, { showAll: true })),
+      run: (signal) => polarityTest(ctxFor(app, signal, { showAll: true, test: true })),
       describe: (r) => !r.needed ? `Dip at the crossover is ${r.normal.dipDb.toFixed(1)} dB, nothing to fix.`
         : `As is: dip ${r.normal.dipDb.toFixed(1)} dB, spread ${r.normal.flatnessDb.toFixed(2)} dB. Flipped: dip ${r.flipped.dipDb.toFixed(1)} dB, spread ${r.flipped.flatnessDb.toFixed(2)} dB. ${Object.keys(r.suggestion).length ? 'Flipped is flatter.' : 'Keep it as it is.'}`,
     }),
@@ -171,7 +175,7 @@ export function renderTune(app) {
         const freqs = xoInput.value.split(/[\s,;]+/).map(Number).filter((f) => f > 0);
         if (!freqs.length) throw new Error('Enter at least one frequency.');
         const filters = tryFilters.checked ? Object.values(app.profile?.crossover?.filter_options ?? {}) : undefined;
-        const r = await crossoverScan(ctxFor(app, signal), freqs, filters);
+        const r = await crossoverScan(ctxFor(app, signal, { test: true }), freqs, filters);
         if (r.suggestion.crossover_frequency) {
           // levels shift with the crossover: re-match at the winner
           r.note = 'Run "Driver levels" again after applying, since the levels at the new crossover differ.';
@@ -188,7 +192,7 @@ export function renderTune(app) {
     step(app, {
       id: 'delay', title: '5. Time alignment', needs: ['tweeter_delay', 'mid_delay', 'tweeter_invert', 'crossover_frequency'],
       text: 'Flips the tweeter for the test and scans the delay: the drivers cancel deepest at the crossover when they are best aligned. Then checks the normal sum is no worse. The fork\'s delay is an all-pass approximation, so the best value can differ from the physical offset.',
-      run: (signal) => delayScan(ctxFor(app, signal)),
+      run: (signal) => delayScan(ctxFor(app, signal, { test: true })),
       describe: (r) => `Deepest null at ${r.best.offsetMm > 0 ? `tweeter +${r.best.offsetMm}` : r.best.offsetMm < 0 ? `mid +${-r.best.offsetMm}` : '0'} mm (${r.best.dipDb.toFixed(1)} dB). Normal-polarity spread: ${r.confirm.best.flatnessDb.toFixed(2)} dB there vs ${r.confirm.current.flatnessDb.toFixed(2)} dB now${Object.keys(r.suggestion).length ? '' : ', so no change is suggested'}.`,
     }),
     step(app, {
@@ -253,10 +257,17 @@ export function renderTune(app) {
 /** @param {App} app @param {any[]} fulls @param {(app: App) => number} chartReference */
 function peqBlock(app, fulls, chartReference) {
   const a = /** @type {any} */ (app);
-  const baseId = a.fitBaseId && fulls.some((m) => m.id === a.fitBaseId) ? a.fitBaseId : fulls[fulls.length - 1]?.id ?? '';
+  // the measurement to fit: the one picked, else the one the shown plan is for, else the latest
+  const has = (/** @type {string} */ id) => !!id && fulls.some((m) => m.id === id);
+  const baseId = has(a.fitBaseId) ? a.fitBaseId : has(app.plan?.baseId) ? app.plan.baseId : fulls[fulls.length - 1]?.id ?? '';
   const base = fulls.find((m) => m.id === baseId);
+  // a plan (table and dotted line) is only ever shown for the measurement it was fitted to
+  if (app.plan && app.plan.baseId !== baseId) {
+    app.plan = null;
+    app.preview = null;
+  }
   const rules = micRules(app.mic);
-  const floor = boostFloor({ fb: app.results.lowEnd?.fb, subsonic: Number(app.writer?.value('subsonic_frequency') ?? 0) });
+  const floor = effectiveBoostFloor(boostFloor({ fb: app.results.lowEnd?.fb, subsonic: Number(app.writer?.value('subsonic_frequency') ?? 0) }), rules.fMin);
 
   const fit = () => {
     if (!base) return app.notify('Measure the whole speaker first.', 'warn');
@@ -267,7 +278,7 @@ function peqBlock(app, fulls, chartReference) {
         profile: /** @type {any} */ (app.profile), values: { ...app.values(), ...(base.settings ?? {}) }, rangeOf: (r) => w.range(r),
         curve: base.curve, target: app.target, mic: app.mic, boostFloorHz: floor, mask: base.mask,
       });
-      app.plan = plan;
+      app.plan = { ...plan, baseId: base.id };
       const offset = levelAt1k(base.curve.freqs, base.curve.db) - chartReference(app);
       app.visible.add(base.id);
       app.preview = { label: 'Predicted with the new PEQ', freqs: plan.freqs, db: plan.predictedDb.map((/** @type {number} */ d) => d + offset) };
@@ -319,7 +330,10 @@ function peqBlock(app, fulls, chartReference) {
     app.persist();
     app.refresh('measure');
     a.refineResult = result;
-    a.abB = w.snapshot(settingRoles(/** @type {any} */ (app.profile)));
+    if (app.session) {
+      /** @type {any} */ (app.session).ab = { b: w.snapshot(settingRoles(/** @type {any} */ (app.profile))), now: 'B', trim: 0 };
+      app.persist();
+    }
     const failedUndo = result.steps.find((s) => s.undoReport && !s.undoReport.ok);
     // the worse pass could not be undone: show what is left and offer to retry the undo
     if (failedUndo?.undoReport) reportWrite(app, failedUndo.undoReport, failedUndo.undoValues ?? {});
@@ -333,7 +347,7 @@ function peqBlock(app, fulls, chartReference) {
   const rr = a.refineResult;
   return h('div', { class: 'step' },
     h('div', { class: 'step-head' }, h('h4', null, 'PEQ fit')),
-    h('p', { class: 'help' }, `Fits up to ${app.profile?.peq_banks.filter((b) => !b.mirror_of).map((b) => `${b.bands ?? b.frequencies?.length} ${b.name ?? b.id}`).join(' + ')} bands towards the target between ${formatHz(rules.fMin)}Hz and ${formatHz(rules.fMax)}Hz, gains ${rules.gainMin} to ${rules.gainMax} dB${rules.cutsOnly ? ' (cuts only)' : ''}. Narrow dips (room cancellations) are never boosted${floor ? `, nor anything below ${Math.round(floor)} Hz` : ''}. Use a ${app.settings.positions}-position measurement for this.`),
+    h('p', { class: 'help' }, `Fits up to ${app.profile?.peq_banks.filter((b) => !b.mirror_of).map((b) => `${b.bands ?? b.frequencies?.length} ${b.name ?? b.id}`).join(' + ')} bands towards the target between ${formatHz(rules.fMin)}Hz and ${formatHz(rules.fMax)}Hz, gains ${rules.gainMin} to ${rules.gainMax} dB${rules.cutsOnly ? ' (cuts only)' : ''}. Narrow dips (room cancellations) are never boosted, nor anything below ${Math.round(floor)} Hz. Use a ${app.settings.positions}-position measurement for this.`),
     h('div', { class: 'row' },
       fulls.length ? field('Measurement to fit', select(fulls.map((m) => ({ value: m.id, label: `${m.label} (${m.positions} pos.)` })), baseId, (v) => {
         a.fitBaseId = v;
@@ -376,10 +390,12 @@ function revert(app) {
 function abBlock(app) {
   const a = /** @type {any} */ (app);
   if (!sessionHere(app) || !app.writer) return null;
-  const tuned = a.abB;
+  // kept with the session, so a reload while on A doesn't lose the tuning
+  const ab = (/** @type {any} */ (app.session).ab ??= { b: null, now: null, trim: 0 });
+  const tuned = ab.b;
   const gains = app.has('tweeter_gain') && app.has('mid_gain');
   // loudness difference between the first and the last whole-speaker measurement of the session
-  const inSession = app.measurements.filter((m) => m.kind === 'full' && app.session && m.time >= app.session.started);
+  const inSession = app.measurements.filter((m) => m.kind === 'full' && !m.test && !m.undone && app.session && m.time >= app.session.started);
   let diff = 0;
   if (inSession.length >= 2) {
     const before = view(inSession[0].curve, 12, 24);
@@ -394,8 +410,9 @@ function abBlock(app) {
     const trim = matched.checked && gains ? (which === 'B' ? -Math.max(0, diff) : -Math.max(0, -diff)) : 0;
     if (trim) for (const g of ['tweeter_gain', 'mid_gain']) values[g] = Number(values[g] ?? 0) + trim;
     const r = await /** @type {DspWriter} */ (app.writer).write(values, { signal });
-    a.abNow = which;
-    a.abTrim = trim;
+    ab.now = which;
+    ab.trim = trim;
+    app.persist();
     reportWrite(app, r, values);
   });
   return h('div', { class: 'step' },
@@ -403,17 +420,18 @@ function abBlock(app) {
     h('p', { class: 'help' }, 'Play your own music, then switch between A (session start) and B (the tuning). With level matching on, the louder one is turned down by the measured difference so it doesn\'t win just by being louder.'),
     !tuned ? h('p', { class: 'muted' }, 'Apply a PEQ fit first, or save the current values as B.') : null,
     h('div', { class: 'row' },
-      h('button', { onclick: () => play('A'), disabled: !!app.busy, class: a.abNow === 'A' ? 'primary' : '' }, 'A: before'),
-      h('button', { onclick: () => play('B'), disabled: !!app.busy || !tuned, class: a.abNow === 'B' ? 'primary' : '' }, 'B: tuned'),
+      h('button', { onclick: () => play('A'), disabled: !!app.busy, class: ab.now === 'A' ? 'primary' : '' }, 'A: before'),
+      h('button', { onclick: () => play('B'), disabled: !!app.busy || !tuned, class: ab.now === 'B' ? 'primary' : '' }, 'B: tuned'),
       h('button', { class: 'link', onclick: () => {
         const b = /** @type {DspWriter} */ (app.writer).snapshot(settingRoles(/** @type {any} */ (app.profile)));
         // the gains on the speaker may carry the A/B level-match trim: take it off again
-        if (a.abTrim) for (const g of ['tweeter_gain', 'mid_gain']) if (g in b) b[g] = Number(b[g]) - a.abTrim;
-        a.abB = b;
+        if (ab.trim) for (const g of ['tweeter_gain', 'mid_gain']) if (g in b) b[g] = Number(b[g]) - ab.trim;
+        ab.b = b;
+        app.persist();
         app.refresh('tune');
       } }, 'Save current values as B'),
       gains ? h('label', { class: 'check' }, matched, ` Level match (${db(diff)})`) : h('span', { class: 'muted' }, 'Level matching needs the driver gain roles.')),
-    a.abNow === 'A' && tuned ? h('p', { class: 'muted' }, 'The speaker is on A now. Press B to go back to the tuning.') : null);
+    ab.now === 'A' && tuned ? h('p', { class: 'muted' }, 'The speaker is on A now. Press B to go back to the tuning.') : null);
 }
 
 /** Copy the tuning to another speaker with the same profile, then verify. @param {App} app */
@@ -421,9 +439,11 @@ function copyBlock(app) {
   const a = /** @type {any} */ (app);
   const others = app.mappings.filter((m) => m.id !== app.mapping?.id && m.profile === app.mapping?.profile);
   if (!others.length || !app.writer) return null;
-  const targetId = a.copyTarget && others.some((m) => m.id === a.copyTarget) ? a.copyTarget : others[0].id;
+  if (!others.some((m) => m.id === a.copyTarget)) a.copyTarget = others[0].id;
+  // read when a button is pressed, not when the card was drawn: the dropdown can change in between
+  const picked = () => /** @type {any} */ (others.find((m) => m.id === a.copyTarget));
   const copy = () => app.run('Copying the tuning', async (signal) => {
-    const other = /** @type {any} */ (others.find((m) => m.id === targetId));
+    const other = picked();
     await app.confirm('Copy the tuning?', `Writes the DSP values of ${app.mapping?.name} to ${other.name}. Which output drives the tweeter is left as ${other.name} has it, since that depends on its wiring.`, 'Copy');
     const values = /** @type {DspWriter} */ (app.writer).snapshot(settingRoles(/** @type {any} */ (app.profile)).filter((r) => !WIRING_ROLES.includes(r)));
     const w2 = new DspWriter(/** @type {any} */ (app.api), /** @type {any} */ (app.profile), other.entities);
@@ -438,7 +458,7 @@ function copyBlock(app) {
     }
   });
   const verify = () => app.run('Measuring the other speaker', async (signal) => {
-    const other = /** @type {any} */ (others.find((m) => m.id === targetId));
+    const other = picked();
     const mine = [...app.measurements].reverse().find((m) => m.kind === 'full');
     if (!mine) throw new Error(`Measure ${app.mapping?.name} first, with the mic where it will be for the other speaker.`);
     if (!app.recorder) throw new Error('Open the mic first.');
@@ -466,7 +486,7 @@ function copyBlock(app) {
     h('div', { class: 'step-head' }, h('h4', null, 'Copy to another speaker')),
     h('p', { class: 'help' }, 'For a second cabinet of the same build: copy every setting, then measure it once to check it matches.'),
     h('div', { class: 'row' },
-      select(others.map((m) => ({ value: m.id, label: m.name })), targetId, (v) => (a.copyTarget = v)),
+      select(others.map((m) => ({ value: m.id, label: m.name })), a.copyTarget, (v) => (a.copyTarget = v)),
       h('button', { onclick: copy, disabled: !!app.busy }, 'Copy settings'),
       h('button', { onclick: verify, disabled: !!app.busy || app.demo }, 'Measure to verify'),
       a.copyUndo ? h('button', { class: 'link', disabled: !!app.busy, onclick: () => undoCopy(app) }, `Undo the copy to ${a.copyUndo.name}`) : null));
