@@ -10,7 +10,7 @@ import { STORE_GRID } from '../../custom_components/speaker_tuner/frontend/src/d
 
 const FRONT = new URL('../../custom_components/speaker_tuner/frontend/', import.meta.url);
 const json = (p) => JSON.parse(readFileSync(new URL(p, FRONT), 'utf8'));
-const files = (dir) => readdirSync(new URL(dir, FRONT)).filter((f) => f.endsWith('.json')).map((f) => `${dir}/${f}`);
+const files = (dir) => readdirSync(new URL(dir, FRONT)).filter((f) => f.endsWith('.json') && f !== 'index.json').map((f) => `${dir}/${f}`);
 // shipped and contributed profiles are held to the same checks
 const profileFiles = () => [...files('profiles'), ...files('profiles/contrib')];
 const louder = json('profiles/louder-tas5805m-crossover.json');
@@ -153,4 +153,11 @@ test('export warns instead of silently defaulting safety-critical values', () =>
   assert.deepEqual(noChannel.problems.map((p) => p.split(' ')[0]), ['crossover_tweeter_channel']);
   const noMin = exportYaml(louder, { crossover_frequency: 2500, crossover_filter: 'LR4 24dB/oct', crossover_tweeter_channel: 'Left' }, {});
   assert.ok(noMin.problems.some((p) => /tweeter minimum frequency is unknown/.test(p)));
+});
+
+test('profiles/contrib/index.json lists exactly the contributed profiles', () => {
+  const listed = json('profiles/contrib/index.json').profiles;
+  const present = files('profiles/contrib').map((f) => f.replace('profiles/contrib/', '').replace(/\.json$/, ''));
+  assert.deepEqual([...listed].sort(), [...present].sort());
+  for (const id of present) assert.equal(json(`profiles/contrib/${id}.json`).id, id, `${id}.json has id ${id}`);
 });

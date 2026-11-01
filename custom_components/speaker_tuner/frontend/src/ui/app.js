@@ -213,6 +213,18 @@ export class TunerApp {
   async loadAssets() {
     const get = async (/** @type {string} */ path) => (await fetch(new URL(path, ASSETS))).json();
     for (const id of SHIPPED.profiles) this.profiles[id] = checkProfile(await get(`profiles/${id}.json`));
+    // profiles shared by other builders (profiles/contrib/index.json lists them)
+    try {
+      for (const id of (await get('profiles/contrib/index.json')).profiles ?? []) {
+        try {
+          this.profiles[id] = checkProfile(await get(`profiles/contrib/${id}.json`));
+        } catch {
+          /* one broken contribution must not stop the app */
+        }
+      }
+    } catch {
+      /* no contributions yet */
+    }
     for (const id of SHIPPED.mics) this.mics[id] = await get(`mics/${id}.json`);
     for (const id of SHIPPED.targets) this.targets[id] = await get(`targets/${id}.json`);
     try {

@@ -313,7 +313,7 @@ table.ba td.ba-new { font-weight: 800; }
 .page.busy .modal { padding-bottom: calc(108px + env(safe-area-inset-bottom, 0px)); }
 .modal-box { background: var(--surface-1); color: var(--fg); border-radius: 26px; padding: 22px; max-width: 460px; width: 100%; box-shadow: var(--shadow); animation: st-rise 0.3s ease; }
 .modal-box h3 { margin: 0 0 6px; font-size: 1.3rem; font-weight: 800; letter-spacing: -0.02em; }
-.modal-box p { color: var(--fg-2); margin: 0 0 6px; }
+.modal-box p { color: var(--fg-2); margin: 0 0 6px; white-space: pre-line; }
 @media (min-width: 700px) { .modal { place-items: center; } }
 
 /* ---------- phone ---------- */

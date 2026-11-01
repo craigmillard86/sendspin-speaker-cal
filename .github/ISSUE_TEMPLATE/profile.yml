@@ -1,0 +1,38 @@
+name: Share a speaker profile
+description: Contribute a profile (and its recommended settings) for a speaker build, so others can start from it.
+title: "Profile: "
+labels: ["profile"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for sharing. **Share profile** in Speaker Tuner (Set up › Speaker) fills this in for you.
+        Check the profile below holds nothing personal (device or room names, IP addresses) before submitting.
+  - type: input
+    id: board
+    attributes:
+      label: Board
+      description: e.g. Sonocotta Louder-ESP32-S3 (TAS5805M)
+    validations:
+      required: true
+  - type: textarea
+    id: build
+    attributes:
+      label: The build
+      description: Drivers, cabinet (sealed, ported, passive radiators), anything that makes it this build.
+      placeholder: "Tweeter: Dayton DC28FT; mid/bass: Tectonic TCP115; 2 passive radiators; 8 L cabinet"
+    validations:
+      required: true
+  - type: textarea
+    id: tuning
+    attributes:
+      label: How it was tuned
+      description: Mic, target, room or placement, and how happy you are with the result.
+  - type: textarea
+    id: profile
+    attributes:
+      label: Profile JSON
+      description: Filled in by Share profile. If it was too long for the link, it is on your clipboard (and downloaded as a file); paste it here.
+      render: json
+    validations:
+      required: true

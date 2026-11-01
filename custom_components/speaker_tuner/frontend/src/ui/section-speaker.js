@@ -8,6 +8,8 @@ import * as store from './store.js';
 import { listEsphomeDevices, deviceEntities, suggestMapping } from '../ha/discover.js';
 import { detectBoard, rankProfiles } from '../ha/detect.js';
 import { profileFromYaml } from '../profiles/esphome-yaml.js';
+import { shareableProfile, shareLink } from '../profiles/share.js';
+import { SHIPPED } from './app.js';
 import { uploadMedia, MEDIA_FOLDER } from '../ha/connection.js';
 import { Playback } from '../ha/playback.js';
 import { expandRoles, checkProfile } from '../profiles/profile.js';
@@ -122,6 +124,33 @@ export function renderSpeaker(app) {
     }
   };
 
+  // send a profile to the project as a GitHub issue, without anything personal
+  const share = async () => {
+    if (!profile) return;
+    const { profile: shared, left } = shareableProfile(profile, app.profiles);
+    const schema = await (await fetch(new URL('../../schema/profile.schema.json', import.meta.url))).json();
+    const problems = validate(schema, shared);
+    if (problems.length) return app.notify(`This profile can't be shared yet:\n${problems.slice(0, 6).join('\n')}`, 'error');
+    const link = shareLink(shared);
+    const rec = Object.keys(shared.recommended?.values ?? {}).length;
+    try {
+      await app.confirm('Share this profile?', [
+        `"${shared.name}" goes to the Speaker Tuner project on GitHub as an issue (you need a GitHub account), so other builders can start from it.`,
+        `Included: its settings${rec ? `, ${rec} recommended settings` : ''}${shared.board ? `, the board (${shared.board.name})` : ''}.`,
+        `Left out: entity IDs, Home Assistant details${left.length ? `, ${left.join(', ')}` : ''}.`,
+        link.inUrl ? 'The issue opens with the profile filled in.' : 'The profile is too long for the link: it is copied to your clipboard (and downloaded) for you to paste into the issue.',
+        'Check the name and notes hold nothing personal before submitting.',
+      ].join('\n\n'), 'Open GitHub', /** @type {any} */ (undefined));
+    } catch {
+      return; // cancelled
+    }
+    if (!link.inUrl) {
+      download(`${shared.id}.json`, link.json, 'application/json');
+      await navigator.clipboard?.writeText(link.json).catch(() => {});
+    }
+    window.open(link.url, '_blank', 'noopener');
+  };
+
   const discover = () => app.run('Looking for ESPHome devices', async () => {
     const devices = await listEsphomeDevices(/** @type {any} */ (app.api));
     /** @type {any} */ (app).devices = devices;
@@ -169,7 +198,8 @@ export function renderSpeaker(app) {
       h('div', { class: 'row tight' },
         h('button', { onclick: uploadYaml, title: 'Build a profile from the speaker\'s ESPHome YAML' }, 'Upload ESPHome YAML'),
         h('button', { onclick: importProfile }, 'Import profile'),
-        profile ? h('button', { onclick: () => download(`${profile.id}.json`, JSON.stringify(profile, null, 2), 'application/json') }, 'Export profile') : null)),
+        profile ? h('button', { onclick: () => download(`${profile.id}.json`, JSON.stringify(profile, null, 2), 'application/json') }, 'Export profile') : null,
+        profile && !SHIPPED.profiles.includes(profile.id) ? h('button', { onclick: share, title: 'Send this profile to the project, so other builders can use it' }, 'Share profile') : null)),
     field('Name', /** @type {HTMLElement} */ (h('input', { value: d.name, placeholder: 'Living room left', oninput: (/** @type {any} */ e) => (d.name = e.target.value) }))),
     h('div', { class: 'row' },
       h('button', { onclick: discover, disabled: !ready || !!app.busy || app.demo }, 'Discover devices'),

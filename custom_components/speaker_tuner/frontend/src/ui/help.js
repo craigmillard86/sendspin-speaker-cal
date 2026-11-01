@@ -54,6 +54,7 @@ export const HELP = {
       'You can set up several speakers; switch between them from the name at the top.',
       'Recognition is "certain" when the firmware names its board (Sonocotta\'s factory firmware does, through ESPHome\'s project: setting) and "looks like" when it comes from the DAC\'s entities and the ESP32 chip. Adding project: to your YAML makes it certain.',
       'HiFi, Loud and Amped boards have no DSP the tool can adjust: they can be measured, not tuned.',
+      'Share profile sends your own profile (with its recommended settings) to the project as a GitHub issue, so other builders of the same speaker can start from it. Your YAML file, entity IDs and secrets are left out.',
     ],
   },
   mic: {
