@@ -860,6 +860,7 @@ export class TunerApp {
       onclick: () => this.goStep(st.id),
     }, h('span', { class: 'n' }, /** @type {any} */ (done)[st.id] && st.id !== step ? '✓' : String(i + 1)), h('span', { class: 'lbl' }, st.label))));
     this.el.chartTools.replaceChildren(
+      this.curvePicker(),
       h('button', { class: 'link', onclick: () => this.toggleTable() }, this.el.table.hidden ? 'Table' : 'Hide table'),
       h('button', { class: 'link', onclick: () => {
         this.chartSmall = !this.chartSmall;
@@ -867,6 +868,60 @@ export class TunerApp {
         this.renderHeader();
         this.chart?.draw();
       } }, this.chartSmall ? 'Bigger chart' : 'Smaller chart'));
+  }
+
+  /**
+   * Show or hide a measurement on the chart, and keep every list of tick boxes in step.
+   * @param {string} id @param {boolean} on
+   */
+  setVisible(id, on) {
+    if (on) this.visible.add(id);
+    else this.visible.delete(id);
+    this.updateChart();
+    for (const box of this.root.querySelectorAll(`input[data-show="${id}"]`)) /** @type {HTMLInputElement} */ (box).checked = on;
+    this.refresh('measure');
+  }
+
+  /** "Curves" on the chart: pick which measurements to show, from any step. */
+  curvePicker() {
+    const shown = this.measurements.filter((m) => this.visible.has(m.id)).length;
+    const keep = this.el.chartTools.querySelector('details.curve-picker');
+    /** @param {any} m */
+    const row = (m) => {
+      const box = /** @type {HTMLInputElement} */ (h('input', { type: 'checkbox', checked: this.visible.has(m.id), 'data-show': m.id, onchange: () => this.setVisible(m.id, box.checked) }));
+      return h('label', { class: 'curve-row' }, box,
+        h('span', { class: 'swatch', style: `background: var(--series-${((m.slot ?? 0) % 8) + 1})` }),
+        h('span', { class: 'curve-label' }, m.label), m.positions > 1 ? h('span', { class: 'muted' }, ` ${m.positions} pos.`) : null);
+    };
+    const real = [...this.measurements].reverse().filter((m) => !m.test);
+    const tests = [...this.measurements].reverse().filter((m) => m.test);
+    /** @param {boolean} on @param {(m: any) => boolean} which */
+    const many = (on, which) => () => {
+      for (const m of this.measurements.filter(which)) {
+        if (on) this.visible.add(m.id);
+        else this.visible.delete(m.id);
+      }
+      this.updateChart();
+      // every tick box on the page follows, wherever it is
+      for (const box of this.root.querySelectorAll('input[data-show]')) {
+        /** @type {HTMLInputElement} */ (box).checked = this.visible.has(/** @type {HTMLElement} */ (box).dataset.show ?? '');
+      }
+      this.refresh('measure');
+    };
+    const all = (/** @type {boolean} */ on) => many(on, (m) => !on || !m.test); // "Show all" is the real measurements
+    const picker = /** @type {HTMLDetailsElement} */ (h('details', { class: 'curve-picker', open: keep instanceof HTMLDetailsElement && keep.open },
+      h('summary', null, `Curves (${shown})`),
+      h('div', { class: 'curve-pop' },
+        this.measurements.length ? null : h('p', { class: 'muted' }, 'No measurements yet.'),
+        real.length ? h('div', { class: 'curve-group' }, real.map(row)) : null,
+        tests.length ? h('details', { class: 'curve-tests' }, h('summary', null, `Scan tests (${tests.length})`), tests.map(row),
+          h('div', { class: 'row tight' },
+            h('button', { class: 'link', onclick: many(true, (m) => !!m.test) }, 'Show all tests'),
+            h('button', { class: 'link', onclick: many(false, (m) => !!m.test) }, 'Hide tests'))) : null,
+        this.measurements.length ? h('div', { class: 'row tight' },
+          h('button', { class: 'link', onclick: all(true) }, 'Show all measurements'),
+          h('button', { class: 'link', onclick: all(false) }, 'Hide all')) : null)));
+    return picker;
   }
 
   /** Re-render one section, or every section of the current step. @param {string} [name] */

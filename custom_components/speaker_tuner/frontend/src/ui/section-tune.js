@@ -190,7 +190,8 @@ export function renderTune(app) {
         const freqs = xoInput.value.split(/[\s,;]+/).map(Number).filter((f) => f > 0);
         if (!freqs.length) throw new Error('Enter at least one frequency.');
         const filters = tryFilters.checked ? Object.values(app.profile?.crossover?.filter_options ?? {}) : undefined;
-        const r = await crossoverScan(ctxFor(app, signal, { test: true }), freqs, filters);
+        // every crossover point stays on the chart: comparing them is the point of the scan
+        const r = await crossoverScan(ctxFor(app, signal, { test: true, showAll: true }), freqs, filters);
         if (r.suggestion.crossover_frequency) {
           // levels shift with the crossover: re-match at the winner
           r.note = 'Run "Driver levels" again after applying, since the levels at the new crossover differ.';
@@ -199,8 +200,11 @@ export function renderTune(app) {
       },
       describe: (r) => h('div', null,
         r.skipped.length ? h('p', { class: 'muted' }, `Skipped (outside the allowed range): ${r.skipped.join(', ')} Hz`) : null,
-        h('table', { class: 'small' }, h('tr', null, h('th', null, 'Crossover'), h('th', null, 'Spread ±1 oct'), h('th', null, 'Dip')),
-          r.results.map((/** @type {any} */ x) => h('tr', null, h('td', null, `${x.frequency} Hz${x.filter && r.results.some((/** @type {any} */ y) => y.filter !== x.filter) ? ` ${x.filter}` : ''}`), h('td', null, `${x.flatnessDb.toFixed(2)} dB`), h('td', null, `${x.dipDb.toFixed(1)} dB`)))),
+        h('table', { class: 'small' }, h('tr', null, h('th', null, 'Show'), h('th', null, 'Crossover'), h('th', null, 'Spread ±1 oct'), h('th', null, 'Dip')),
+          r.results.map((/** @type {any} */ x) => h('tr', null,
+            h('td', null, showToggle(app, x.measurement)),
+            h('td', null, `${x.frequency} Hz${x.filter && r.results.some((/** @type {any} */ y) => y.filter !== x.filter) ? ` ${x.filter}` : ''}${x === r.current ? ' (now)' : ''}`),
+            h('td', null, `${x.flatnessDb.toFixed(2)} dB`), h('td', null, `${x.dipDb.toFixed(1)} dB`)))),
         !Object.keys(r.suggestion).length ? h('p', { class: 'muted' }, 'None is clearly flatter than the current setting, so no change is suggested.') : null,
         r.note ? h('p', { class: 'muted' }, r.note) : null),
     }),
@@ -547,4 +551,15 @@ function undoCopy(app) {
       await w2.stop();
     }
   });
+}
+
+/**
+ * A tick box that shows or hides one measurement on the chart, with its colour.
+ * @param {App} app @param {any} m a measurement record
+ */
+function showToggle(app, m) {
+  if (!m) return null;
+  const box = /** @type {HTMLInputElement} */ (h('input', { type: 'checkbox', checked: app.visible.has(m.id), 'data-show': m.id, 'aria-label': `Show ${m.label} on the chart`,
+    onchange: () => app.setVisible(m.id, box.checked) }));
+  return h('label', { class: 'check' }, box, h('span', { class: 'swatch', style: `background: var(--series-${((m.slot ?? 0) % 8) + 1})` }));
 }

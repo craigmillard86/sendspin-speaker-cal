@@ -107,11 +107,7 @@ export function renderMeasure(app) {
       m.relevelled ? 're-levelled' : '',
       lowConf > 5 ? `${lowConf}% low confidence` : '',
     ].filter(Boolean);
-    const box = /** @type {HTMLInputElement} */ (h('input', { type: 'checkbox', checked: app.visible.has(m.id), 'aria-label': `Show ${m.label}`, onchange: () => {
-      if (box.checked) app.visible.add(m.id);
-      else app.visible.delete(m.id);
-      app.updateChart();
-    } }));
+    const box = /** @type {HTMLInputElement} */ (h('input', { type: 'checkbox', checked: app.visible.has(m.id), 'data-show': m.id, 'aria-label': `Show ${m.label}`, onchange: () => app.setVisible(m.id, box.checked) }));
     return h('li', null,
       box,
       h('span', { class: 'swatch', style: `background: var(--series-${((/** @type {any} */ (m).slot ?? 0) % 8) + 1})` }),
