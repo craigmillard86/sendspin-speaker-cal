@@ -40,6 +40,21 @@ export function renderSpeaker(app) {
   const d = draft(app);
   const profile = app.profiles[d.profile];
   const ready = !!app.api;
+  // a saved speaker: fetch its entities, so every role is a list to pick from again
+  // (they used to be listed only straight after Discover)
+  const a = /** @type {any} */ (app);
+  if (!d.candidates && d.device_id && app.api && !app.demo && a.loadingEntitiesFor !== d.device_id) {
+    a.loadingEntitiesFor = d.device_id;
+    deviceEntities(app.api, d.device_id)
+      .then((list) => {
+        if (draft(app) === d) {
+          d.candidates = list;
+          app.refresh('speaker');
+        }
+      })
+      .catch(() => {})
+      .finally(() => (a.loadingEntitiesFor = null));
+  }
 
   const speakers = select(
     [{ value: '', label: 'New speaker…' }, ...app.mappings.map((m) => ({ value: m.id, label: m.name }))],
@@ -147,6 +162,10 @@ function roleEditor(app, d, profile) {
     const spec = roles[role];
     const options = candidates.filter((c) => c.domain === spec.domain);
     const current = d.entities[role] ?? '';
+    // an entity mapped earlier that is no longer on this device stays visible and selectable
+    if (current && !options.some((c) => c.entity_id === current)) {
+      options.push({ entity_id: current, domain: spec.domain, name: 'not on this device', object: current.split('.')[1] ?? '', state: undefined });
+    }
     if (!candidates.length) {
       return h('input', { value: current, placeholder: `${spec.domain}.…`, oninput: (/** @type {any} */ e) => {
         const v = e.target.value.trim();
@@ -164,7 +183,7 @@ function roleEditor(app, d, profile) {
     h('summary', null, `Entity roles (${mapped} assigned)`),
     h('p', { class: 'help' }, candidates.length
       ? 'Suggested from the entity names. Leave a role empty if your speaker does not have it; the features that need it hide themselves.'
-      : 'Discover the device to pick entities from a list, or type entity IDs.'),
+      : /** @type {any} */ (app).loadingEntitiesFor ? 'Loading the speaker\'s entities…' : 'Press Discover devices and pick the speaker to choose entities from lists, or type entity IDs.'),
     Object.entries(groups).map(([group, list]) =>
       h('fieldset', null, h('legend', null, /** @type {any} */ (GROUP_TITLES)[group] ?? (profile.peq_banks.find((b) => b.id === group)?.name ?? group) + ' PEQ'),
         h('div', { class: 'role-grid' }, list.map((role) => h('div', { class: 'role-row' },
