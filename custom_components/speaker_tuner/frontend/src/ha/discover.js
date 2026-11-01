@@ -135,3 +135,28 @@ export function suggestMapping(profile, entities) {
   }
   return mapping;
 }
+
+/**
+ * A saved speaker whose entities were renamed in Home Assistant (or whose device was
+ * re-flashed under a new name): keep every role whose entity still exists, and map the
+ * others again from the device's entities. Returns null when nothing is missing.
+ * @param {Record<string, string>} entities role -> entity_id as saved
+ * @param {Set<string>} existing entity IDs Home Assistant has now
+ * @param {import('../profiles/profile.js').Profile} profile @param {DeviceEntity[]} candidates the device's entities
+ * @returns {{ entities: Record<string, string>, fixed: number, lost: string[] } | null}
+ */
+export function remapMissing(entities, existing, profile, candidates) {
+  const missing = Object.entries(entities).filter(([, id]) => id && !existing.has(id)).map(([role]) => role);
+  if (!missing.length) return null;
+  const kept = Object.fromEntries(Object.entries(entities).filter(([, id]) => id && existing.has(id)));
+  const used = new Set(Object.values(kept));
+  const suggested = suggestMapping(profile, candidates.filter((c) => !used.has(c.entity_id)));
+  /** @type {Record<string, string>} */
+  const out = { ...kept };
+  const lost = [];
+  for (const role of missing) {
+    if (suggested[role]) out[role] = suggested[role];
+    else lost.push(role);
+  }
+  return { entities: out, fixed: missing.length - lost.length, lost };
+}

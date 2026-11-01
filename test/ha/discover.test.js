@@ -64,3 +64,24 @@ test('roles are suggested across sub-devices', async () => {
   assert.equal(mapping.crossover_frequency, 'number.louder_s3_cab_crossover_frequency');
   assert.equal(mapping.media_player, 'media_player.louder_s3_cab_player', 'the file player, not the Sendspin one');
 });
+
+test('a saved speaker follows entities renamed in Home Assistant', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { remapMissing, suggestMapping: suggest, deviceEntities: entitiesOf } = await import('../../custom_components/speaker_tuner/frontend/src/ha/discover.js');
+  const reg = JSON.parse(readFileSync(new URL('../fixtures/registry-louder-s3-cab.json', import.meta.url), 'utf8'));
+  const profile = JSON.parse(readFileSync(new URL('../../custom_components/speaker_tuner/frontend/profiles/louder-tas5805m-crossover.json', import.meta.url), 'utf8'));
+  const root = reg.devices.find((d) => !d.via_device_id).id;
+  const api = (r) => ({ deviceRegistry: async () => r.devices, entityRegistry: async () => r.entities, getStates: async () => [] });
+  const saved = suggest(profile, await entitiesOf(api(reg), root));
+  // rename every entity ID, as Home Assistant's "rename device and entity IDs" does
+  const renamed = structuredClone(reg);
+  for (const e of renamed.entities) e.entity_id = e.entity_id.replace('louder_s3_cab_', 'lounge_speaker_').replace('my_speaker_', 'lounge_speaker_');
+  const now = await entitiesOf(api(renamed), root);
+  const fix = remapMissing(saved, new Set(renamed.entities.map((e) => e.entity_id)), profile, now);
+  assert.ok(fix);
+  assert.equal(fix.lost.length, 0);
+  assert.equal(fix.fixed, Object.keys(saved).length);
+  assert.equal(fix.entities.crossover_frequency, 'number.lounge_speaker_crossover_frequency');
+  // nothing renamed: nothing to do
+  assert.equal(remapMissing(saved, new Set(reg.entities.map((e) => e.entity_id)), profile, await entitiesOf(api(reg), root)), null);
+});

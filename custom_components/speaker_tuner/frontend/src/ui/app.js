@@ -6,6 +6,7 @@ import { h } from './dom.js';
 import { ResponseChart } from './chart.js';
 import * as store from './store.js';
 import { HaApi, connectWithToken, uploadMedia, MEDIA_FOLDER, NOISE_FILE } from '../ha/connection.js';
+import { deviceEntities, remapMissing } from '../ha/discover.js';
 import { testSignal } from '../dsp/pink.js';
 import { encodeWav16 } from '../dsp/wav.js';
 import { DspWriter } from '../ha/dsp-writer.js';
@@ -363,7 +364,10 @@ export class TunerApp {
 
   /** @param {DeviceMapping} mapping */
   saveMapping(mapping) {
-    this.mappings = [...this.mappings.filter((m) => m.id !== mapping.id), mapping];
+    // an existing speaker keeps its place in the list
+    this.mappings = this.mappings.some((m) => m.id === mapping.id)
+      ? this.mappings.map((m) => (m.id === mapping.id ? mapping : m))
+      : [...this.mappings, mapping];
     this.settings.mappingId = mapping.id;
     this.persist();
   }
@@ -378,9 +382,25 @@ export class TunerApp {
     this.preview = null;
     this.results = {};
     this.restoreTuning();
-    const m = this.mapping;
+    let m = this.mapping;
     const profile = this.profile;
     if (!m || !profile || !this.api) return;
+    // entities renamed in Home Assistant (or the device re-flashed under a new name): follow them
+    if (m.device_id && !this.demo) {
+      try {
+        const existing = new Set((await this.api.getStates()).map((/** @type {any} */ s) => s.entity_id));
+        const fix = Object.values(m.entities).some((id) => id && !existing.has(id))
+          ? remapMissing(m.entities, existing, profile, await deviceEntities(this.api, m.device_id))
+          : null;
+        if (fix && fix.fixed) {
+          m = { ...m, entities: fix.entities };
+          this.saveMapping(m);
+          this.notify(`${m.name}'s entities were renamed in Home Assistant; the speaker now uses the new names (${fix.fixed} updated${fix.lost.length ? `, ${fix.lost.length} not found: check Entity roles` : ''}).`, fix.lost.length ? 'warn' : 'ok');
+        }
+      } catch {
+        /* keep the saved entities; the writer reports what it can't reach */
+      }
+    }
     this.writer = new DspWriter(this.api, profile, m.entities);
     this.writer.onChange = () => this.scheduleSettingsRefresh();
     await this.writer.start();
