@@ -14,7 +14,7 @@ export const HELP = {
     intro: 'The checklist of everything the tool needs before it can measure: a connection to Home Assistant, the speaker and a microphone.',
     todo: [
       'Work down the list. Each item that is not ticked has a button that opens the part that sorts it out.',
-      'Use the Checklist button at the top of each part to come back here.',
+      'Use Back to the checklist, at the top of each part, to come back here.',
       'When all three are ticked, press Next: Measure.',
     ],
     why: 'Measuring needs all three at once: the tool plays the noise through Home Assistant on the speaker and records it with the mic in this browser. Measure and Tune stay locked until the list is complete, so nothing fails half way.',

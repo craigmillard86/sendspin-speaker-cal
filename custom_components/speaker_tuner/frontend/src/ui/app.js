@@ -824,7 +824,7 @@ export class TunerApp {
       d.replaceChildren(h('header', { class: 'drawer-head' }, h('h2', null, t ? t.title : 'Help'), h('span', { class: 'spacer' }), close),
         h('div', { class: 'drawer-body help' },
           t ? [
-            h('div', { class: 'back-row' }, h('button', { class: 'back-btn', onclick: () => this.openHelp(null) }, 'All help topics')),
+            h('div', { class: 'back-row' }, h('button', { class: 'back-btn', onclick: () => this.openHelp(null) }, 'Back to all help topics')),
             h('p', { class: 'help-step muted' }, t.step),
             h('p', { class: 'help-intro' }, t.intro),
             h('h3', null, 'What to do'), h('ol', null, t.todo.map((x) => h('li', null, x))),
@@ -882,7 +882,7 @@ export class TunerApp {
   /** A focused Set up card: always open, with the way back to the checklist. @param {HTMLElement} el */
   withBack(el) {
     if (el instanceof HTMLDetailsElement) el.open = true;
-    const back = h('button', { class: 'back-btn', onclick: () => this.focusSetup(null) }, 'Checklist');
+    const back = h('button', { class: 'back-btn', onclick: () => this.focusSetup(null) }, 'Back to the checklist');
     // inside the card's body, so it lines up with everything else in the card
     const body = el.querySelector(':scope > .card-body') ?? el;
     body.prepend(h('div', { class: 'back-row' }, back));

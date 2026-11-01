@@ -137,7 +137,7 @@ speaker there), the four steps **Set up · Measure · Tune · Save**, and the ch
   what you get. **Help** (top right) lists every topic.
 
 **Set up** is a checklist: Home Assistant, the speaker and the microphone.
-Each item's button opens that part on its own (the **Checklist** button at its top comes back). Measure
+Each item's button opens that part on its own (**Back to the checklist** at its top comes back). Measure
 and Tune stay locked until all three are ticked, and Save until there is a speaker; tapping a
 locked step says what is missing.
 
