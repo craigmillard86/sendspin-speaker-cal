@@ -3,7 +3,7 @@
 // revert, A/B listening and copying the tuning to another speaker.
 
 import { h, field, select, db } from './dom.js';
-import { card, feedbackBox } from './app.js';
+import { card, feedbackBox, helpButton } from './app.js';
 import {
   levelMatch, polarityTest, crossoverScan, delayScan, lowEnd, notchAndAir, baffleSuggestion, boostFloor,
 } from '../measure/driver-checks.js';
@@ -112,6 +112,7 @@ function step(app, { id, title, text, needs, run, describe, extra, enabled = tru
   return h('div', { class: 'step', 'data-where': id },
     h('div', { class: 'step-head' },
       stepToggle(app, id, title, chip, true),
+      helpButton(id, title.replace(/^\d+\.\s*/, '')),
       h('button', { class: result ? '' : 'primary', onclick: go, disabled: !!app.busy || !app.writer || lacking.length > 0 || !enabled }, result ? 'Run again' : 'Run')),
     h('p', { class: 'help' }, text),
     lacking.length ? h('p', { class: 'reason' }, `Needs these settings mapped in Set up: ${lacking.join(', ')}.`) : null,
@@ -162,7 +163,7 @@ function stepToggle(app, id, title, chip, open) {
 
 /** A closed step: one line. Its messages still show. @param {App} app @param {string} id @param {string} title @param {[string, string]} chip */
 function closedStep(app, id, title, chip) {
-  return h('div', { class: 'step step-closed', 'data-where': id }, h('div', { class: 'step-head' }, stepToggle(app, id, title, chip, false)), feedbackBox(id));
+  return h('div', { class: 'step step-closed', 'data-where': id }, h('div', { class: 'step-head' }, stepToggle(app, id, title, chip, false), helpButton(id, title.replace(/^\d+\.\s*/, ''))), feedbackBox(id));
 }
 
 /** @param {App} app @param {string} id */
@@ -424,7 +425,7 @@ function peqBlock(app, fulls, chartReference) {
   const plan = app.plan;
   const rr = a.refineResult;
   return h('div', { class: 'step', 'data-where': 'peq' },
-    h('div', { class: 'step-head' }, stepToggle(app, 'peq', title, chip, true)),
+    h('div', { class: 'step-head' }, stepToggle(app, 'peq', title, chip, true), helpButton('peq', 'PEQ fit')),
     h('p', { class: 'help' }, `Fits up to ${app.profile?.peq_banks.filter((b) => !b.mirror_of).map((b) => `${b.bands ?? b.frequencies?.length} ${b.name ?? b.id}`).join(' + ')} bands towards the target between ${formatHz(rules.fMin)}Hz and ${formatHz(rules.fMax)}Hz, gains ${rules.gainMin} to ${rules.gainMax} dB${rules.cutsOnly ? ' (cuts only)' : ''}. Narrow dips (room cancellations) are never boosted, nor anything below ${Math.round(floor)} Hz. Use a ${app.settings.positions}-position measurement for this.`),
     h('div', { class: 'row' },
       fulls.length ? field('Measurement to fit', select(fulls.map((m) => ({ value: m.id, label: `${m.label} (${m.positions} pos.)` })), baseId, (v) => {
@@ -499,7 +500,7 @@ function abBlock(app) {
     reportWrite(app, r, values);
   });
   return h('div', { class: 'step', 'data-where': 'ab' },
-    h('div', { class: 'step-head' }, stepToggle(app, 'ab', 'Listen: A/B', ['Compare before and after', ''], true)),
+    h('div', { class: 'step-head' }, stepToggle(app, 'ab', 'Listen: A/B', ['Compare before and after', ''], true), helpButton('ab', 'Listen: A/B')),
     h('p', { class: 'help' }, 'Play your own music, then switch between A (session start) and B (the tuning). With level matching on, the louder one is turned down by the measured difference so it doesn\'t win just by being louder.'),
     !tuned ? h('p', { class: 'muted' }, 'Apply a PEQ fit first, or save the current values as B.') : null,
     h('div', { class: 'row' },
@@ -568,7 +569,7 @@ function copyBlock(app) {
       : `${other.name} matches within ${diff.toFixed(1)} dB RMS.`, diff > 1.5 ? 'warn' : 'ok');
   });
   return h('div', { class: 'step', 'data-where': 'copy' },
-    h('div', { class: 'step-head' }, stepToggle(app, 'copy', 'Copy to another speaker', [`${others.length} of the same build`, ''], true)),
+    h('div', { class: 'step-head' }, stepToggle(app, 'copy', 'Copy to another speaker', [`${others.length} of the same build`, ''], true), helpButton('copy', 'Copy to another speaker')),
     h('p', { class: 'help' }, 'For a second cabinet of the same build: copy every setting, then measure it once to check it matches.'),
     h('div', { class: 'row' },
       select(others.map((m) => ({ value: m.id, label: m.name })), a.copyTarget, (v) => (a.copyTarget = v)),

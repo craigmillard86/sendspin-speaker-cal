@@ -25,6 +25,7 @@ import { renderTune } from './section-tune.js';
 import { renderSettings } from './section-settings.js';
 import { renderExport } from './section-export.js';
 import { renderReady } from './section-ready.js';
+import { HELP, HELP_ORDER, HELP_ALIAS } from './help.js';
 
 /** The four steps and the cards each one shows. */
 export const STEPS = [
@@ -144,8 +145,10 @@ export class TunerApp {
     this.taskWhere = /** @type {string | null} */ (null);
     this.lastWhere = /** @type {string | null} */ (null);
     this.lastWhereAt = 0;
-    /** @type {'settings' | 'messages' | null} */
+    /** @type {'settings' | 'messages' | 'help' | null} */
     this.drawer = null;
+    /** @type {string | null} the help topic shown; null shows the list of topics */
+    this.helpTopic = null;
     this.chartSmall = false;
     currentApp = this;
   }
@@ -603,7 +606,14 @@ export class TunerApp {
         h('button', { class: 'link', onclick: () => this.clearAlert(id) }, 'Dismiss'))));
   }
 
-  /** @param {'settings' | 'messages' | null} which */
+  /** Open the help for a section or step, or the list of topics. @param {string | null} [topic] */
+  openHelp(topic = null) {
+    this.helpTopic = topic && HELP[topic] ? topic : null;
+    this.openDrawer('help');
+    this.el.drawer.scrollTop = 0;
+  }
+
+  /** @param {'settings' | 'messages' | 'help' | null} which */
   openDrawer(which) {
     this.drawer = which;
     this.renderDrawer();
@@ -615,7 +625,25 @@ export class TunerApp {
     this.el.scrim.hidden = !this.drawer;
     if (!this.drawer) return;
     const close = h('button', { class: 'link', onclick: () => this.openDrawer(null) }, 'Close');
-    if (this.drawer === 'messages') {
+    if (this.drawer === 'help') {
+      const t = this.helpTopic ? HELP[this.helpTopic] : null;
+      const list = (/** @type {string} */ step) => HELP_ORDER.filter((k) => HELP[k].step === step).map((k) =>
+        h('li', null, h('button', { class: 'link', onclick: () => this.openHelp(k) }, HELP[k].title)));
+      d.replaceChildren(h('header', { class: 'drawer-head' }, h('h2', null, t ? t.title : 'Help'), h('span', { class: 'spacer' }), close),
+        h('div', { class: 'drawer-body help' },
+          t ? [
+            h('button', { class: 'link back', onclick: () => this.openHelp(null) }, '‹ All help topics'),
+            h('p', { class: 'help-step muted' }, t.step),
+            h('p', { class: 'help-intro' }, t.intro),
+            h('h3', null, 'What to do'), h('ol', null, t.todo.map((x) => h('li', null, x))),
+            h('h3', null, 'Why'), h('p', null, t.why),
+            h('h3', null, 'What you get'), h('p', null, t.outcome),
+            t.tips?.length ? [h('h3', null, 'Good to know'), h('ul', null, t.tips.map((x) => h('li', null, x)))] : null,
+          ] : [
+            h('p', { class: 'help-intro' }, 'Speaker Tuner measures your speaker with a microphone, finds what to change, writes it to the speaker through Home Assistant and checks the result. Pick a topic, or press ? next to any section or step.'),
+            ['Set up', 'Measure', 'Tune', 'Save'].map((step) => [h('h3', null, step), h('ul', { class: 'help-index' }, list(step))]),
+          ]));
+    } else if (this.drawer === 'messages') {
       const icon = { ok: '✓', info: 'i', warn: '!', error: '×' };
       d.replaceChildren(h('header', { class: 'drawer-head' }, h('h2', null, 'Messages'), h('span', { class: 'spacer' }), close),
         this.history.length
@@ -903,6 +931,8 @@ export class TunerApp {
         h('span', { class: `conn-pill ${this.api ? '' : 'off'}`, title: conn }, h('span', { class: 'dot' }), h('span', { class: 'hide-sm' }, conn)),
         h('button', { class: 'icon-btn', disabled: !this.writer, onclick: () => this.openDrawer('settings'), title: 'Every setting of this speaker', 'aria-label': 'All settings' },
           h('span', { 'aria-hidden': 'true' }, '⚙'), h('span', { class: 'hide-sm' }, 'All settings')),
+        h('button', { class: 'icon-btn', onclick: () => this.openHelp(null), 'aria-label': 'Help' },
+          h('span', { 'aria-hidden': 'true' }, '?'), h('span', { class: 'hide-sm' }, 'Help')),
         h('button', { class: 'icon-btn', onclick: () => this.openDrawer('messages'), 'aria-label': 'Messages' },
           h('span', { 'aria-hidden': 'true' }, '☰'), h('span', { class: 'hide-sm' }, 'Messages'), this.el.msgCount)));
     const step = this.currentStep();
@@ -1029,8 +1059,23 @@ export class TunerApp {
  */
 export function card(title, summary, body, open = false, where = slug(title)) {
   return /** @type {HTMLDetailsElement} */ (h('details', { class: 'card', open, 'data-default': open ? 'open' : 'closed', 'data-where': where },
-    h('summary', null, h('span', { class: 'card-title' }, title), summary ? h('span', { class: 'card-summary muted' }, summary) : null),
+    h('summary', null, h('span', { class: 'card-title' }, title), helpButton(where, title), summary ? h('span', { class: 'card-summary muted' }, summary) : null),
     h('div', { class: 'card-body' }, body, feedbackBox(where))));
+}
+
+/**
+ * The "?" that opens a section's or step's help, when it has one.
+ * @param {string} topic @param {string} title
+ */
+export function helpButton(topic, title) {
+  topic = /** @type {Record<string, string>} */ (HELP_ALIAS)[topic] ?? topic;
+  if (!HELP[topic]) return null;
+  return h('button', { class: 'help-btn', title: `Help: ${title}`, 'aria-label': `Help: ${title}`, onclick: (/** @type {Event} */ e) => {
+    // inside a card's summary: don't open or close the card
+    e.preventDefault();
+    e.stopPropagation();
+    currentApp?.openHelp(topic);
+  } }, '?');
 }
 
 /** Where a card or block shows its messages. @param {string} where */

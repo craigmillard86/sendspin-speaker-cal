@@ -128,6 +128,8 @@ speaker there), the four steps **Set up · Measure · Tune · Save**, and the ch
   under the steps until they are fixed.
 - **Messages** (top right) keeps everything that was said this session; **All settings** has
   a control for every speaker setting.
+- **?** next to every section and Tune step opens its help: what to do, why it matters, and
+  what you get. **Help** (top right) lists every topic.
 
 **Set up** is a checklist: Home Assistant, the speaker, the microphone and the test noise.
 Each item's button opens that part on its own (**‹ Back to the checklist** returns). Measure

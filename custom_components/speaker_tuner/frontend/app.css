@@ -352,3 +352,18 @@ table.ba td.ba-new { font-weight: 800; }
 
 /* Set up: the way back from one part to the checklist */
 .page button.link.back { margin: 0 0 12px; padding-left: 0; display: inline-block; }
+
+/* help: the "?" by a title, and the Help drawer */
+.page button.help-btn { width: 24px; height: 24px; min-height: 0; padding: 0; border-radius: 50%; flex: none; font-size: 0.78rem; font-weight: 800;
+  background: var(--surface-3); color: var(--fg-2); display: inline-grid; place-items: center; }
+.page button.help-btn:hover:not(:disabled) { color: var(--fg); background: var(--surface-3); opacity: 0.85; }
+summary .help-btn { margin: 0 4px; vertical-align: middle; }
+.step-head .help-btn { order: 0; }
+.drawer-body.help { line-height: 1.55; font-size: 0.92rem; }
+.drawer-body.help h3 { margin: 18px 0 6px; font-size: 0.8rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--fg-2); }
+.drawer-body.help ol, .drawer-body.help ul { padding-left: 20px; margin: 0; }
+.drawer-body.help li { margin: 4px 0; }
+.drawer-body.help .help-intro { font-size: 1rem; }
+.drawer-body.help .help-step { margin: 0; font-size: 0.78rem; letter-spacing: 0.05em; text-transform: uppercase; }
+.help-index { list-style: none; padding-left: 0 !important; }
+.help-index li { margin: 2px 0 !important; }
