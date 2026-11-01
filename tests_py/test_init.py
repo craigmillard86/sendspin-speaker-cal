@@ -36,7 +36,9 @@ async def test_panel_registered_for_admins(hass: HomeAssistant) -> None:
     assert panel.sidebar_title == "Speaker Tuner"
     custom = panel.config["_panel_custom"]
     assert custom["name"] == "speaker-tuner-panel"
-    assert custom["module_url"].startswith(f"{STATIC_URL}/panel.js?v=")
+    # the version is part of the path, so every module gets a new URL after an update
+    assert custom["module_url"].endswith("/panel.js")
+    assert custom["module_url"].startswith(f"{STATIC_URL}/0.")
     assert custom["embed_iframe"] is False
 
 
@@ -45,6 +47,7 @@ async def test_app_files_are_served(hass: HomeAssistant, hass_client) -> None:
     assert await async_setup_component(hass, "http", {})
     await _add_entry(hass)
     client = await hass_client()
+    base = hass.data["frontend_panels"][PANEL_URL_PATH].config["_panel_custom"]["module_url"].rsplit("/", 1)[0]
     for path in (
         "panel.js",
         "app.css",
@@ -54,9 +57,9 @@ async def test_app_files_are_served(hass: HomeAssistant, hass_client) -> None:
         "mics/akg-ck32.json",
         "targets/flat.json",
     ):
-        res = await client.get(f"{STATIC_URL}/{path}")
+        res = await client.get(f"{base}/{path}")
         assert res.status == 200, path
-    missing = await client.get(f"{STATIC_URL}/nope.js")
+    missing = await client.get(f"{base}/nope.js")
     assert missing.status == 404
 
 

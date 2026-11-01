@@ -21,19 +21,23 @@ FRONTEND_DIR = Path(__file__).parent / "frontend"
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Serve the app and add the sidebar panel."""
-    # static paths cannot be removed again, so register them once per HA run
-    if not hass.data.get(DOMAIN):
-        await hass.http.async_register_static_paths(
-            [StaticPathConfig(STATIC_URL, str(FRONTEND_DIR), cache_headers=False)]
-        )
-        hass.data[DOMAIN] = True
-
     integration = await async_get_integration(hass, DOMAIN)
+    # The app is a tree of ES modules that import each other by relative URL. Serving it under
+    # a path that includes the version gives every file a new URL after an update, so a
+    # browser can never mix cached modules from the old version with the new ones.
+    base = f"{STATIC_URL}/{integration.version}"
+    # static paths cannot be removed again, so register them once per HA run
+    if hass.data.get(DOMAIN) != base:
+        await hass.http.async_register_static_paths(
+            [StaticPathConfig(base, str(FRONTEND_DIR), cache_headers=False)]
+        )
+        hass.data[DOMAIN] = base
+
     await panel_custom.async_register_panel(
         hass,
         webcomponent_name=WEB_COMPONENT,
         frontend_url_path=PANEL_URL_PATH,
-        module_url=f"{STATIC_URL}/panel.js?v={integration.version}",
+        module_url=f"{base}/panel.js",
         sidebar_title=PANEL_TITLE,
         sidebar_icon=PANEL_ICON,
         require_admin=True,

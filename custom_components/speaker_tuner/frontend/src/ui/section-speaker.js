@@ -179,8 +179,17 @@ function roleEditor(app, d, profile) {
     });
   };
 
+  // what discovery found, so a missing kind of entity is obvious
+  /** @type {Record<string, number>} */
+  const byDomain = {};
+  for (const c of candidates) byDomain[c.domain] = (byDomain[c.domain] ?? 0) + 1;
+  const subs = new Set(candidates.map((c) => c.device).filter(Boolean));
+  const found = candidates.length
+    ? `Found ${candidates.length} entities on this speaker${subs.size ? ` and its ${subs.size} sub-device${subs.size === 1 ? '' : 's'} (${[...subs].join(', ')})` : ''}: ${Object.entries(byDomain).map(([dm, n]) => `${n} ${dm.replace('_', ' ')}`).join(', ')}.`
+    : '';
   return h('details', { class: 'roles', open: !!candidates.length },
     h('summary', null, `Entity roles (${mapped} assigned)`),
+    found ? h('p', { class: 'reason' }, found) : null,
     h('p', { class: 'help' }, candidates.length
       ? 'Suggested from the entity names. Leave a role empty if your speaker does not have it; the features that need it hide themselves.'
       : /** @type {any} */ (app).loadingEntitiesFor ? 'Loading the speaker\'s entities…' : 'Press Discover devices and pick the speaker to choose entities from lists, or type entity IDs.'),
