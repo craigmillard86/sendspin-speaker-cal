@@ -68,8 +68,11 @@ function reportWrite(app, r, changes) {
 function applyValues(app, changes, what, onDone) {
   return app.run(`Applying ${what}`, async (signal) => {
     await app.ensureSession();
-    const r = await /** @type {DspWriter} */ (app.writer).write(changes, { signal });
+    const w = /** @type {DspWriter} */ (app.writer);
+    const before = Object.fromEntries(Object.keys(changes).map((k) => [k, w.value(k)]));
+    const r = await w.write(changes, { signal });
     reportWrite(app, r, changes);
+    app.logApplied(what, before, Object.fromEntries(Object.keys(changes).map((k) => [k, w.value(k)])));
     if (r.ok) onDone?.();
     await checkHeadroom(app);
   });
@@ -411,6 +414,7 @@ function peqBlock(app, fulls, chartReference) {
     app.refresh('measure');
     a.refineResult = result;
     a.peqSet = { before: valuesBefore, after: { ...app.values() }, plan: firstPlan };
+    app.logApplied(`the PEQ fit (deviation ${result.startRms.toFixed(2)} → ${result.finalRms.toFixed(2)} dB)`, valuesBefore, { ...app.values() });
     if (app.session) {
       /** @type {any} */ (app.session).ab = { b: w.snapshot(settingRoles(/** @type {any} */ (app.profile))), now: 'B', trim: 0 };
       app.persist();

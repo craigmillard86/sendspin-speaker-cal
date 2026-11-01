@@ -9,7 +9,8 @@
     "frontend",
     "http",
     "media_source",
-    "panel_custom"
+    "panel_custom",
+    "websocket_api"
   ],
   "documentation": "https://github.com/craigmillard86/sendspin-speaker-cal",
   "integration_type": "service",

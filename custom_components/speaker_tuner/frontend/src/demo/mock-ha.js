@@ -103,6 +103,14 @@ export function createMockHa(profile, { device = 'demo_speaker', latencyMs = 5, 
     return null;
   };
 
+  // the Speaker Tuner integration's data store (speaker_tuner/store/get|set), as in Home Assistant
+  /** @type {Map<string, any>} */
+  const kv = new Map();
+  /** @type {Record<string, string>} */
+  const kvUpdated = {};
+  /** @type {Set<(event: any) => void>} */
+  const storeListeners = new Set();
+
   /** @param {any} msg */
   const respond = async (msg) => {
     await new Promise((r) => setTimeout(r, latencyMs));
@@ -126,6 +134,23 @@ export function createMockHa(profile, { device = 'demo_speaker', latencyMs = 5, 
         ];
       case 'call_service':
         return handleService(msg);
+      case 'speaker_tuner/store/get': {
+        if (!('keys' in msg)) return { values: {}, updated: { ...kvUpdated } };
+        const keys = msg.keys.filter((/** @type {string} */ k) => kv.has(k));
+        return { values: Object.fromEntries(keys.map((/** @type {string} */ k) => [k, structuredClone(kv.get(k))])), updated: Object.fromEntries(keys.map((/** @type {string} */ k) => [k, kvUpdated[k]])) };
+      }
+      case 'speaker_tuner/store/set': {
+        const updated = new Date().toISOString();
+        if (msg.value === null) {
+          kv.delete(msg.key);
+          delete kvUpdated[msg.key];
+        } else {
+          kv.set(msg.key, structuredClone(msg.value));
+          kvUpdated[msg.key] = updated;
+        }
+        setTimeout(() => storeListeners.forEach((l) => l({ event_type: 'speaker_tuner_updated', data: { key: msg.key, client: msg.client, updated } })), latencyMs);
+        return { updated };
+      }
       case 'subscribe_events':
       case 'unsubscribe_events':
         return null;
@@ -139,9 +164,10 @@ export function createMockHa(profile, { device = 'demo_speaker', latencyMs = 5, 
     send: respond,
     subscribe: async (msg, cb) => {
       await respond(msg);
-      listeners.add(cb);
+      const set = msg.event_type === 'speaker_tuner_updated' ? storeListeners : listeners;
+      set.add(cb);
       return () => {
-        listeners.delete(cb);
+        set.delete(cb);
       };
     },
     onClose: () => {},

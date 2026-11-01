@@ -141,7 +141,9 @@ export function renderSpeaker(app) {
 
   const devices = /** @type {any} */ (app).devices ?? [];
   const body = [
-    field('Speaker', speakers, 'Each speaker you set up is saved in this browser.'),
+    field('Speaker', speakers, store.inHomeAssistant()
+      ? 'Speakers, profiles, measurements and tuning results are saved in Home Assistant: every browser sees them.'
+      : app.mode === 'standalone' && !app.demo ? 'Saved in this browser. With the Speaker Tuner integration installed in Home Assistant they are saved there instead, for every browser.' : 'Saved in this browser.'),
     h('div', { class: 'row' },
       field('Speaker profile', profiles, profile?.notes),
       h('div', { class: 'row tight' },

@@ -35,6 +35,37 @@ export const STEPS = [
   { id: 'save', label: 'Save', sections: ['export'] },
 ];
 
+/** How the stored keys are named in messages. */
+const STORE_LABELS = /** @type {Record<string, string>} */ ({
+  mappings: 'speakers', profiles: 'profiles', mics: 'mic profiles', targets: 'targets', settings: 'settings',
+  cal: 'the cal file', session: 'the session', measurements: 'measurements', tuning: 'tuning results',
+});
+
+/**
+ * A speaker's tuning state for storage: measurements are referred to by id (they are stored
+ * once, with the measurements), typed arrays become plain arrays.
+ * @param {TunerApp} app
+ */
+function packTuning(app) {
+  const a = /** @type {any} */ (app);
+  const pack = (/** @type {any} */ v) => (v == null ? null : JSON.parse(JSON.stringify(v, (_k, x) => {
+    if (x && typeof x === 'object' && !Array.isArray(x) && x.curve && typeof x.id === 'string') return { $m: x.id };
+    if (ArrayBuffer.isView(x)) return Array.from(/** @type {any} */ (x));
+    return x;
+  })));
+  return { results: pack(app.results), refineResult: pack(a.refineResult), peqSet: pack(a.peqSet), history: a.history ?? [] };
+}
+
+/** @param {any} v @param {Map<string, any>} byId */
+function unpackRefs(v, byId) {
+  if (Array.isArray(v)) return v.map((x) => unpackRefs(x, byId));
+  if (v && typeof v === 'object') {
+    if (typeof v.$m === 'string' && Object.keys(v).length === 1) return byId.get(v.$m) ?? null;
+    return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, unpackRefs(x, byId)]));
+  }
+  return v;
+}
+
 /** @type {TunerApp | null} the app on the page; card() reads its messages */
 let currentApp = null;
 
@@ -94,6 +125,7 @@ export class TunerApp {
       crossoverList: '2000, 2500, 3000',
       step: '',
       ...store.load('settings', {}),
+      ...store.load('local', {}),
     };
     /** @type {{ freqs: number[], db: number[] } | null} */
     this.cal = store.load('cal', null);
@@ -206,7 +238,10 @@ export class TunerApp {
       this.clearAlert('connection');
       this.toast('Reconnected to Home Assistant.');
       this.writer?.reload().then(() => this.checkMutes()).catch(() => {});
+      // other browsers may have saved while this one was away
+      this.attachStore().catch(() => {});
     });
+    await this.attachStore().catch((e) => this.alert('store', 'warn', `Could not read the saved data from Home Assistant: ${/** @type {Error} */ (e).message}`));
     if (this.mapping) await this.useMapping(this.mapping.id);
   }
 
@@ -287,7 +322,16 @@ export class TunerApp {
 
   persist() {
     if (this.demo) return;
-    store.save('settings', this.settings);
+    // what belongs to this browser (which speaker and mic it uses, the open step) stays here;
+    // the rest of the settings are shared through Home Assistant
+    const { mappingId, micDeviceId, micProfile, tier, step, ...shared } = this.settings;
+    store.save('local', { mappingId, micDeviceId, micProfile, tier, step });
+    store.save('settings', shared);
+    if (this.mapping) {
+      const all = store.load('tuning', /** @type {Record<string, any>} */ ({}));
+      all[this.mapping.id] = packTuning(this);
+      store.save('tuning', all);
+    }
     store.save('mappings', this.mappings.filter((m) => m.id !== 'demo'));
     store.save('session', this.session);
     // keep every real measurement (up to 150) but only the last 20 scan tests: one delay scan
@@ -318,6 +362,7 @@ export class TunerApp {
     this.plan = null;
     this.preview = null;
     this.results = {};
+    this.restoreTuning();
     const m = this.mapping;
     const profile = this.profile;
     if (!m || !profile || !this.api) return;
@@ -349,7 +394,72 @@ export class TunerApp {
   }
 
   /** Close the mic, stop following HA and stop any task (the HA panel was removed). */
+  /** This speaker's Tune results, PEQ report and history, as saved (with Home Assistant: by any browser). */
+  restoreTuning() {
+    const a = /** @type {any} */ (this);
+    const t = this.mapping && !this.demo ? store.load('tuning', /** @type {Record<string, any>} */ ({}))[this.mapping.id] : null;
+    const byId = new Map(this.measurements.map((m) => [m.id, m]));
+    const revive = (/** @type {any} */ v) => unpackRefs(v, byId);
+    this.results = revive(t?.results) ?? {};
+    a.refineResult = revive(t?.refineResult) ?? null;
+    a.peqSet = revive(t?.peqSet) ?? null;
+    a.history = t?.history ?? [];
+  }
+
+  /**
+   * Record what was written to the speaker, for the history (and the report).
+   * @param {string} what @param {Record<string, any>} before @param {Record<string, any>} after
+   */
+  logApplied(what, before, after) {
+    const a = /** @type {any} */ (this);
+    a.history = [...(a.history ?? []), { at: new Date().toISOString(), what, before, after }].slice(-50);
+    this.persist();
+  }
+
+  /** Use Home Assistant's storage when the integration provides it, moving this browser's data there. */
+  async attachStore() {
+    if (this.demo || !this.api) return;
+    const r = await store.attachServer(this.api, {
+      onError: (key, message) => this.alert('store', 'error', `Could not save ${STORE_LABELS[key] ?? key} in Home Assistant: ${message}`),
+      onRemoteChange: (key) => {
+        // one save elsewhere can change several keys: reload and say so once
+        const a = /** @type {any} */ (this);
+        (a.remoteKeys ??= new Set()).add(STORE_LABELS[key] ?? key);
+        clearTimeout(a.remoteTimer);
+        a.remoteTimer = setTimeout(() => {
+          const what = [...a.remoteKeys];
+          a.remoteKeys = null;
+          this.reloadFromStore();
+          this.toast(`Updated from another device: ${what.join(', ')}.`);
+        }, 400);
+      },
+    });
+    if (!r.available) return;
+    this.reloadFromStore();
+    const moved = Object.entries(r.moved).filter(([k]) => STORE_LABELS[k]);
+    if (moved.length) this.notify(`Moved from this browser to Home Assistant: ${moved.map(([k, n]) => (n > 1 ? `${n} ${STORE_LABELS[k]}` : STORE_LABELS[k])).join(', ')}. Every browser now sees them.`, 'ok');
+  }
+
+  /** Read everything again from the store (after attaching to Home Assistant, or another browser changed something). */
+  reloadFromStore() {
+    const a = /** @type {any} */ (this);
+    this.mappings = store.load('mappings', []);
+    this.settings = { ...this.settings, ...store.load('settings', {}), ...store.load('local', {}) };
+    this.cal = store.load('cal', null);
+    a.calName = undefined;
+    this.measurements = store.loadMeasurements();
+    this.session = store.load('session', null);
+    for (const p of store.load('profiles', [])) this.profiles[p.id] = p;
+    for (const m of store.load('mics', [])) this.mics[m.id] = m;
+    for (const t of store.load('targets', [])) this.targets[t.id] = t;
+    for (const id of [...this.visible]) if (!this.measurements.some((m) => m.id === id)) this.visible.delete(id);
+    if (!this.busy) this.restoreTuning();
+    this.refresh();
+    this.updateChart();
+  }
+
   async dispose() {
+    store.detachServer();
     this.abort?.abort('stopped');
     clearTimeout(this._settingsTimer);
     // let a stopped task put its test values back (that needs the writer still listening)
@@ -505,6 +615,7 @@ export class TunerApp {
       this.task = null;
       this.taskWhere = null;
       this.status('');
+      this.persist();
       this.refresh();
     }
   }

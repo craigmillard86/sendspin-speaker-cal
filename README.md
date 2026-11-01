@@ -40,6 +40,7 @@ speaker in a simulated room.
 - [Target curves](#target-curves)
 - [Running the standalone page](#running-the-standalone-page)
 - [Writing a profile for your speaker](#writing-a-profile-for-your-speaker)
+- [Where your data is kept](#where-your-data-is-kept)
 - [Limits and good to know](#limits-and-good-to-know)
 - [Development](#development)
 
@@ -152,8 +153,9 @@ run, **Next step** opens the next one.
    you leave empty hide themselves.
 4. **Media player**: pick the player that plays files on the speaker. On Louder boards with
    Sendspin that is the *… Player* entity, not the *… Sendspin Player*.
-5. Give the speaker a name and press **Save speaker**. You can set up several speakers;
-   each is remembered in this browser.
+5. Give the speaker a name and press **Save speaker**. You can set up several speakers.
+   With the integration installed they are saved in Home Assistant (see
+   [Where your data is kept](#where-your-data-is-kept)), so every browser sees them.
 6. **Test noise:** press **Upload to Home Assistant**. This puts a 20-second pink noise file
    (48 kHz, 16-bit, mono, with 1-second fades) into your media folder at
    `/media/speaker-tuner/` and fills in its address. Press **Play 3 s** to check you hear it.
@@ -248,8 +250,9 @@ At the bottom of the **Tune** step:
    value, and measures again the same way. It repeats up to three times, stops when a pass
    improves things by less than 0.3 dB, and undoes a pass that made things worse. The result
    shows the RMS deviation from the target before and after.
-3. **Revert to session start** puts back every value from when the session started. It is
-   stored in the browser, so it works after a page reload too.
+3. **Revert to session start** puts back every value from when the session started. The
+   session is saved with the rest of the data, so it works after a page reload, and from
+   another browser.
 
 What the fit will not do:
 
@@ -352,7 +355,7 @@ development, for people without HACS, or from another computer:
 ## Writing a profile for your speaker
 
 A profile says what a type of speaker can do; it holds no entity IDs (those are stored
-separately per speaker, in the browser). Profiles live in
+separately per speaker). Profiles live in
 `custom_components/speaker_tuner/frontend/profiles/`, and **Import profile** loads one in the
 app. [`schema/profile.schema.json`](custom_components/speaker_tuner/frontend/schema/profile.schema.json)
 describes every field and gives autocomplete in editors such as VS Code. Start from
@@ -403,6 +406,24 @@ describes every field and gives autocomplete in editors such as VS Code. Start f
   reported by name.
 
 Made one that works? Please share it: see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Where your data is kept
+
+With the Speaker Tuner integration installed, the tool keeps its data in Home Assistant
+(in `.storage/speaker_tuner.*` files, backed up with the rest of Home Assistant):
+speakers and their entity roles, imported profiles, mic profiles and targets, the cal file,
+shared settings, measurements, the session (the revert point) and each speaker's Tune
+results, PEQ report and a history of every Apply. Every browser and phone that opens the
+panel sees the same, and a change made in one shows up in the others within a second.
+
+Only what belongs to one browser stays in it: the standalone page's address and token, which
+speaker and which microphone input this browser uses, and view preferences. The browser also
+keeps a copy of the rest, so the page opens instantly.
+
+The first time a browser that already has speakers or measurements connects, it moves them
+into Home Assistant (merged with what is there) and says so. The standalone page
+against a Home Assistant without the integration keeps everything in the browser, as before.
+Deleting the integration deletes its data.
 
 ## Limits and good to know
 
