@@ -1,3 +1,3 @@
 // @ts-check
 // Kept in step with manifest.json and package.json (a test checks).
-export const VERSION = '0.3.2';
+export const VERSION = '0.3.3';
