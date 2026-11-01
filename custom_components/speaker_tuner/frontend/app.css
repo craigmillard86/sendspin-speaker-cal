@@ -352,7 +352,11 @@ table.ba td.ba-new { font-weight: 800; }
 .step-closed:hover h4 { color: var(--fg-1, inherit); }
 
 /* Set up: the way back from one part to the checklist */
-.page button.link.back { margin: 0 0 12px; padding-left: 0; display: inline-block; }
+/* back to a list (Set up checklist, help topics): a small pill like the other controls */
+.back-row { margin: 0 0 14px; }
+.page button.back-btn { min-height: 34px; padding: 6px 14px 6px 10px; font-size: 0.84rem; font-weight: 700; gap: 6px; background: var(--surface-2); color: var(--fg-2); }
+.page button.back-btn:hover:not(:disabled) { background: var(--surface-3); color: var(--fg); }
+.page button.back-btn::before { content: ""; width: 7px; height: 7px; border-left: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(45deg); margin: 0 2px 0 4px; }
 
 /* help: the "?" by a title, and the Help drawer */
 .page button.help-btn { width: 24px; height: 24px; min-height: 0; padding: 0; border-radius: 50%; flex: none; font-size: 0.78rem; font-weight: 800;
