@@ -1,6 +1,6 @@
 {
   "name": "speaker-tuner",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Closed-loop speaker auto-EQ for ESPHome speakers, run from Home Assistant",
   "type": "module",
   "license": "MIT",
