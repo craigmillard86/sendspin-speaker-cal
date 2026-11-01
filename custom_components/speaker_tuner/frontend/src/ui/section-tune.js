@@ -97,19 +97,21 @@ function step(app, { id, title, text, needs, run, describe, extra, enabled = tru
   const result = app.results[id];
   const suggestion = result?.suggestion ?? {};
   const hasSuggestion = Object.keys(suggestion).length > 0;
+  if (!isOpen(app, id)) return closedStep(app, id, title, stepChip(result));
   const go = () => app.run(title, async (signal) => {
     // the revert point is taken before the step writes its first test value
+    app.ui.tune.open = id;
     await app.ensureSession();
     app.results[id] = await run(signal);
   }, id);
   // the step's state at a glance
-  const chip = !result ? ['Not run', ''] : result.applied ? ['Applied', 'chip-ok'] : hasSuggestion ? ['Suggested change', 'chip-strong'] : ['Nothing to change', 'chip-ok'];
+  const chip = stepChip(result);
   const roles = app.roles;
   /** @param {any} v */
   const show = (v) => (typeof v === 'number' ? String(Math.round(v * 100) / 100) : v === true ? 'on' : v === false ? 'off' : String(v ?? '–'));
   return h('div', { class: 'step', 'data-where': id },
     h('div', { class: 'step-head' },
-      h('div', { class: 'step-title' }, h('h4', null, title), h('span', { class: `chip ${chip[1]}` }, chip[0])),
+      stepToggle(app, id, title, chip, true),
       h('button', { class: result ? '' : 'primary', onclick: go, disabled: !!app.busy || !app.writer || lacking.length > 0 || !enabled }, result ? 'Run again' : 'Run')),
     h('p', { class: 'help' }, text),
     lacking.length ? h('p', { class: 'reason' }, `Needs these settings mapped in Set up: ${lacking.join(', ')}.`) : null,
@@ -126,7 +128,48 @@ function step(app, { id, title, text, needs, run, describe, extra, enabled = tru
       h('div', { class: 'row' },
         h('button', { class: 'primary', disabled: !!app.busy, onclick: () => applyValues(app, suggestion, title.replace(/^\d+\.\s*/, '').toLowerCase(), () => (result.applied = true)) }, 'Apply'),
         h('span', { class: 'reason' }, 'Nothing changes on the speaker until you apply.'))) : null,
+    result && (result.applied || !hasSuggestion) ? nextButton(app, id) : null,
     feedbackBox(id));
+}
+
+/** @param {any} result @returns {[string, string]} */
+function stepChip(result) {
+  if (!result) return ['Not run', ''];
+  if (result.applied) return ['Applied', 'chip-ok'];
+  return Object.keys(result.suggestion ?? {}).length ? ['Suggested change', 'chip-strong'] : ['Nothing to change', 'chip-ok'];
+}
+
+/** One step is open at a time. @param {App} app @param {string} id */
+function isOpen(app, id) {
+  return app.ui.tune?.open === id;
+}
+
+/** @param {App} app @param {string | null} id */
+function openStep(app, id) {
+  app.ui.tune.open = id;
+  app.refresh('tune');
+  if (id) app.root.querySelector(`.step[data-where="${id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+/**
+ * The step's title and state; pressing it opens or closes the step.
+ * @param {App} app @param {string} id @param {string} title @param {[string, string]} chip @param {boolean} open
+ */
+function stepToggle(app, id, title, chip, open) {
+  return h('button', { class: 'step-toggle', 'aria-expanded': String(open), onclick: () => openStep(app, open ? null : id) },
+    h('h4', null, title), h('span', { class: `chip ${chip[1]}` }, chip[0]), h('span', { class: 'chev', 'aria-hidden': 'true' }, open ? '⌃' : '⌄'));
+}
+
+/** A closed step: one line. Its messages still show. @param {App} app @param {string} id @param {string} title @param {[string, string]} chip */
+function closedStep(app, id, title, chip) {
+  return h('div', { class: 'step step-closed', 'data-where': id }, h('div', { class: 'step-head' }, stepToggle(app, id, title, chip, false)), feedbackBox(id));
+}
+
+/** @param {App} app @param {string} id */
+function nextButton(app, id) {
+  const order = app.ui.tune?.order ?? [];
+  const next = order[order.indexOf(id) + 1];
+  return next ? h('div', { class: 'row' }, h('button', { class: 'primary', onclick: () => openStep(app, next) }, 'Next step')) : null;
 }
 
 /** Chart reference level: 1 kHz of the first full measurement shown (as in app.updateChart). @param {App} app */
@@ -147,9 +190,15 @@ export function renderTune(app) {
     app.settings.crossoverList = xoInput.value;
     app.persist();
   } }));
-  const form = (app.ui.tune ??= { tryFilters: false, baffleWidth: null });
+  const form = (app.ui.tune ??= { tryFilters: false, baffleWidth: null, open: undefined, order: [] });
   const tryFilters = /** @type {HTMLInputElement} */ (h('input', { type: 'checkbox', checked: form.tryFilters, onchange: () => (form.tryFilters = tryFilters.checked) }));
   const baffleWidth = /** @type {HTMLInputElement} */ (h('input', { type: 'number', min: 0, max: 50, step: 1, value: form.baffleWidth ?? app.writer?.value('baffle_width') ?? 0, oninput: () => (form.baffleWidth = baffleWidth.value) }));
+
+  // one step open at a time: the first one not done yet, until the user picks another
+  const order = [...(isCrossover ? ['lowEnd', 'level', 'polarity', 'crossover', 'delay', 'baffle', 'notch'] : []), 'peq'];
+  const done = (/** @type {string} */ id) => (id === 'peq' ? !!(/** @type {any} */ (app).refineResult) : !!app.results[id] && stepChip(app.results[id])[0] !== 'Suggested change');
+  form.order = order;
+  if (form.open === undefined) form.open = order.find((id) => !done(id)) ?? null;
 
   const steps = isCrossover ? [
     step(app, {
@@ -250,7 +299,7 @@ export function renderTune(app) {
   ] : [];
 
   return card('Tune', ready ? `Mic tier: ${tier}` : 'Set up a speaker first', [
-    isCrossover ? h('p', { class: 'help' }, 'Work down the list. Each step measures, puts back what it changed for the test, and suggests values; nothing changes until you press Apply. Run them again in any order.') : null,
+    isCrossover ? h('p', { class: 'help' }, 'Work down the list; press a step to open it. Each step measures, puts back what it changed for the test, and suggests values; nothing changes until you press Apply. Run them again in any order.') : null,
     ...steps,
     peqBlock(app, fulls, chartReference),
     /** @type {any} */ (app).headroomWarning ? h('div', { class: 'notice notice-warn' }, /** @type {any} */ (app).headroomWarning,
@@ -285,6 +334,10 @@ function peqBlock(app, fulls, chartReference) {
     app.plan = null;
     app.preview = null;
   }
+  const title = app.profile?.component === 'tas58xx-crossover' ? '8. PEQ fit' : 'PEQ fit';
+  /** @type {[string, string]} */
+  const chip = a.refineResult ? ['Applied', 'chip-ok'] : app.plan ? ['Fitted, not applied', 'chip-strong'] : ['Not run', ''];
+  if (!isOpen(app, 'peq')) return closedStep(app, 'peq', title, chip);
   const rules = micRules(app.mic);
   const floor = effectiveBoostFloor(boostFloor({ fb: app.results.lowEnd?.fb, subsonic: Number(app.writer?.value('subsonic_frequency') ?? 0) }), rules.fMin);
 
@@ -371,7 +424,7 @@ function peqBlock(app, fulls, chartReference) {
   const plan = app.plan;
   const rr = a.refineResult;
   return h('div', { class: 'step', 'data-where': 'peq' },
-    h('div', { class: 'step-head' }, h('h4', null, 'PEQ fit')),
+    h('div', { class: 'step-head' }, stepToggle(app, 'peq', title, chip, true)),
     h('p', { class: 'help' }, `Fits up to ${app.profile?.peq_banks.filter((b) => !b.mirror_of).map((b) => `${b.bands ?? b.frequencies?.length} ${b.name ?? b.id}`).join(' + ')} bands towards the target between ${formatHz(rules.fMin)}Hz and ${formatHz(rules.fMax)}Hz, gains ${rules.gainMin} to ${rules.gainMax} dB${rules.cutsOnly ? ' (cuts only)' : ''}. Narrow dips (room cancellations) are never boosted, nor anything below ${Math.round(floor)} Hz. Use a ${app.settings.positions}-position measurement for this.`),
     h('div', { class: 'row' },
       fulls.length ? field('Measurement to fit', select(fulls.map((m) => ({ value: m.id, label: `${m.label} (${m.positions} pos.)` })), baseId, (v) => {
@@ -419,6 +472,7 @@ function revert(app) {
 function abBlock(app) {
   const a = /** @type {any} */ (app);
   if (!sessionHere(app) || !app.writer) return null;
+  if (!isOpen(app, 'ab')) return closedStep(app, 'ab', 'Listen: A/B', ['Compare before and after', '']);
   // kept with the session, so a reload while on A doesn't lose the tuning
   const ab = (/** @type {any} */ (app.session).ab ??= { b: null, now: null, trim: 0 });
   const tuned = ab.b;
@@ -445,7 +499,7 @@ function abBlock(app) {
     reportWrite(app, r, values);
   });
   return h('div', { class: 'step', 'data-where': 'ab' },
-    h('div', { class: 'step-head' }, h('h4', null, 'Listen: A/B')),
+    h('div', { class: 'step-head' }, stepToggle(app, 'ab', 'Listen: A/B', ['Compare before and after', ''], true)),
     h('p', { class: 'help' }, 'Play your own music, then switch between A (session start) and B (the tuning). With level matching on, the louder one is turned down by the measured difference so it doesn\'t win just by being louder.'),
     !tuned ? h('p', { class: 'muted' }, 'Apply a PEQ fit first, or save the current values as B.') : null,
     h('div', { class: 'row' },
@@ -469,6 +523,7 @@ function copyBlock(app) {
   const a = /** @type {any} */ (app);
   const others = app.mappings.filter((m) => m.id !== app.mapping?.id && m.profile === app.mapping?.profile);
   if (!others.length || !app.writer) return null;
+  if (!isOpen(app, 'copy')) return closedStep(app, 'copy', 'Copy to another speaker', [`${others.length} of the same build`, '']);
   if (!others.some((m) => m.id === a.copyTarget)) a.copyTarget = others[0].id;
   // read when a button is pressed, not when the card was drawn: the dropdown can change in between
   const picked = () => /** @type {any} */ (others.find((m) => m.id === a.copyTarget));
@@ -513,7 +568,7 @@ function copyBlock(app) {
       : `${other.name} matches within ${diff.toFixed(1)} dB RMS.`, diff > 1.5 ? 'warn' : 'ok');
   });
   return h('div', { class: 'step', 'data-where': 'copy' },
-    h('div', { class: 'step-head' }, h('h4', null, 'Copy to another speaker')),
+    h('div', { class: 'step-head' }, stepToggle(app, 'copy', 'Copy to another speaker', [`${others.length} of the same build`, ''], true)),
     h('p', { class: 'help' }, 'For a second cabinet of the same build: copy every setting, then measure it once to check it matches.'),
     h('div', { class: 'row' },
       select(others.map((m) => ({ value: m.id, label: m.name })), a.copyTarget, (v) => (a.copyTarget = v)),

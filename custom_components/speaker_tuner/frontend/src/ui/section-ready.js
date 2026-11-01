@@ -7,11 +7,7 @@ import { card } from './app.js';
 
 /** @param {import('./app.js').TunerApp} app */
 export function renderReady(app) {
-  const open = (/** @type {string} */ name) => () => {
-    const el = app.sections[name];
-    if (el instanceof HTMLDetailsElement) el.open = true;
-    el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
+  const open = (/** @type {string} */ name) => () => app.focusSetup(name);
   const items = [
     {
       ok: !!app.api,

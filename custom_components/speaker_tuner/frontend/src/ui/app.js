@@ -105,6 +105,8 @@ export class TunerApp {
     this.writer = null;
     /** @type {import('../audio/recorder.js').Recorder | null} */
     this.recorder = null;
+    /** @type {string | null} the part of Set up shown in place of the checklist */
+    this.setupFocus = null;
     /** @type {{ label: string, freqs: number[], db: number[] } | null} */
     this.preview = null;
     /** @type {any} */
@@ -167,7 +169,7 @@ export class TunerApp {
       await this.connected();
     } catch (e) {
       this.api = null;
-      this.alert('reconnect', 'warn', `Could not reconnect to ${saved.url}. ${/** @type {Error} */ (e).message}`, { label: 'Open Set up', fn: () => this.goStep('setup') });
+      this.alert('reconnect', 'warn', `Could not reconnect to ${saved.url}. ${/** @type {Error} */ (e).message}`, { label: 'Open Set up', fn: () => this.goStep('setup', 'connect') });
     }
   }
 
@@ -628,8 +630,14 @@ export class TunerApp {
     /** @type {HTMLElement | null} */ (close).focus();
   }
 
-  /** @param {string} id */
-  goStep(id) {
+  /** @param {string} id @param {string | null} [focus] part of Set up to open */
+  goStep(id, focus = null) {
+    const blocked = this.stepBlocked(id);
+    if (blocked) {
+      this.toast(blocked);
+      return;
+    }
+    this.setupFocus = id === 'setup' ? focus : null;
     this.step = id;
     this.settings.step = id;
     this.persist();
@@ -639,10 +647,55 @@ export class TunerApp {
     this.el.page.scrollIntoView?.({ block: 'start' });
   }
 
-  /** The step to show: the saved one, else Set up until a speaker exists, else Measure. */
+  /**
+   * Open one part of Set up (connect, speaker or mic) in place of the checklist.
+   * @param {string | null} name
+   */
+  focusSetup(name) {
+    this.setupFocus = name;
+    for (const el of Object.values(this.sections)) el.remove();
+    this.sections = {};
+    this.refresh();
+    this.el.page.scrollIntoView?.({ block: 'start' });
+  }
+
+  /** A focused Set up card: always open, with the way back to the checklist. @param {HTMLElement} el */
+  withBack(el) {
+    if (el instanceof HTMLDetailsElement) el.open = true;
+    const back = h('button', { class: 'link back', onclick: () => this.focusSetup(null) }, '‹ Back to the checklist');
+    const summary = el.querySelector(':scope > summary');
+    if (summary) summary.after(back);
+    else el.prepend(back);
+  }
+
+  /** The step to show: the saved one, else Set up until a speaker exists, else Measure; never a locked one. */
   currentStep() {
-    if (STEPS.some((st) => st.id === this.step)) return this.step;
-    return this.mapping && this.api ? 'measure' : 'setup';
+    const want = STEPS.some((st) => st.id === this.step) ? this.step : this.mapping && this.api ? 'measure' : 'setup';
+    return this.stepBlocked(want) ? 'setup' : want;
+  }
+
+  /** What Set up still needs before measuring, in the checklist's words. */
+  setupMissing() {
+    const out = [];
+    if (!this.api) out.push('Home Assistant');
+    if (!(this.mapping && this.writer)) out.push('speaker');
+    if (!this.demo && !this.recorder) out.push('microphone');
+    if (!this.demo && !this.mapping?.media_url) out.push('test noise');
+    return out;
+  }
+
+  /**
+   * Why a step can't be opened yet, or '' when it can. Measure and Tune need Set up done;
+   * Save needs a speaker.
+   * @param {string} id
+   */
+  stepBlocked(id) {
+    if (id === 'measure' || id === 'tune') {
+      const missing = this.setupMissing();
+      return missing.length ? `Finish Set up first: still needs ${missing.join(', ')}.` : '';
+    }
+    if (id === 'save') return this.api && this.mapping && this.writer ? '' : 'Set up a speaker first.';
+    return '';
   }
 
   /** Which steps are complete, for the step control. */
@@ -835,7 +888,7 @@ export class TunerApp {
         const id = speaker.value;
         if (id === '__new') {
           /** @type {any} */ (this).draft = null;
-          this.useMapping('').then(() => this.goStep('setup'));
+          this.useMapping('').then(() => this.goStep('setup', 'speaker'));
           return;
         }
         this.run('Switching speaker', async () => {
@@ -854,11 +907,17 @@ export class TunerApp {
           h('span', { 'aria-hidden': 'true' }, '☰'), h('span', { class: 'hide-sm' }, 'Messages'), this.el.msgCount)));
     const step = this.currentStep();
     const done = this.stepDone();
-    this.el.steps.replaceChildren(...STEPS.map((st, i) => h('button', {
-      class: `step-tab ${/** @type {any} */ (done)[st.id] && st.id !== step ? 'done' : ''}`,
-      'aria-current': st.id === step ? 'step' : null,
-      onclick: () => this.goStep(st.id),
-    }, h('span', { class: 'n' }, /** @type {any} */ (done)[st.id] && st.id !== step ? '✓' : String(i + 1)), h('span', { class: 'lbl' }, st.label))));
+    this.el.steps.replaceChildren(...STEPS.map((st, i) => {
+      const blocked = this.stepBlocked(st.id);
+      // a locked step stays pressable so a tap says why, as a toast
+      return h('button', {
+        class: `step-tab ${/** @type {any} */ (done)[st.id] && st.id !== step ? 'done' : ''} ${blocked ? 'locked' : ''}`,
+        'aria-current': st.id === step ? 'step' : null,
+        'aria-disabled': blocked ? 'true' : null,
+        title: blocked || null,
+        onclick: () => this.goStep(st.id),
+      }, h('span', { class: 'n' }, /** @type {any} */ (done)[st.id] && st.id !== step ? '✓' : String(i + 1)), h('span', { class: 'lbl' }, st.label));
+    }));
     this.el.chartTools.replaceChildren(
       this.curvePicker(),
       h('button', { class: 'link', onclick: () => this.toggleTable() }, this.el.table.hidden ? 'Table' : 'Hide table'),
@@ -927,7 +986,9 @@ export class TunerApp {
   /** Re-render one section, or every section of the current step. @param {string} [name] */
   refresh(name) {
     const step = this.currentStep();
-    const wanted = /** @type {any} */ (STEPS.find((st) => st.id === step)).sections.filter((n) => !(n === 'connect' && this.mode === 'panel'));
+    let wanted = /** @type {any} */ (STEPS.find((st) => st.id === step)).sections.filter((n) => !(n === 'connect' && this.mode === 'panel'));
+    // Set up shows the checklist, or the one part of it the user picked
+    if (step === 'setup') wanted = this.setupFocus && wanted.includes(this.setupFocus) ? [this.setupFocus] : ['ready'];
     if (name === 'settings') {
       if (this.drawer === 'settings') this.renderDrawer();
       return;
@@ -942,6 +1003,7 @@ export class TunerApp {
     const names = name ? (wanted.includes(name) ? [name] : []) : wanted;
     for (const n of names) {
       const next = this.renderers[n](this);
+      if (step === 'setup' && n === this.setupFocus) this.withBack(next);
       const old = this.sections[n];
       // keep what the user opened or closed, unless the card's default changed (e.g. setup done)
       if (old instanceof HTMLDetailsElement && next instanceof HTMLDetailsElement && old.dataset.default === next.dataset.default) next.open = old.open;

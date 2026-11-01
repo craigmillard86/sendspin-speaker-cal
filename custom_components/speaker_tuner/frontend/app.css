@@ -335,3 +335,20 @@ table.ba td.ba-new { font-weight: 800; }
 .step-result h5 { margin: 14px 0 6px; font-size: 0.82rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--fg-2); }
 .findings { margin: 0 0 6px; padding-left: 18px; font-size: 0.88rem; line-height: 1.5; }
 .findings.muted { color: var(--fg-2); }
+
+/* a step whose prerequisites aren't met: dimmed, a tap says why */
+.step-tab.locked { opacity: 0.45; cursor: not-allowed; }
+.step-tab.locked:hover { background: transparent; }
+
+/* Tune: one step open at a time */
+.page button.step-toggle { background: transparent; padding: 4px 8px; margin: -4px -8px; min-height: 0; justify-content: flex-start; font: inherit; color: inherit; text-align: left; }
+.page button.step-toggle:hover:not(:disabled) { background: var(--surface-2); }
+.step-toggle { box-sizing: border-box; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; flex: 1; cursor: pointer; border-radius: 10px; padding: 2px 0; }
+.step-toggle:focus-visible { outline: 2px solid var(--focus, var(--fg-2)); outline-offset: 4px; }
+.step-toggle .chev { margin-left: auto; color: var(--fg-3); font-size: 0.9rem; }
+.step-closed { padding: 12px 0; }
+.step-closed h4 { font-weight: 650; color: var(--fg-2); }
+.step-closed:hover h4 { color: var(--fg-1, inherit); }
+
+/* Set up: the way back from one part to the checklist */
+.page button.link.back { margin: 0 0 12px; padding-left: 0; display: inline-block; }
