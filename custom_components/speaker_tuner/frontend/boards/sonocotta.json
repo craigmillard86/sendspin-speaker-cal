@@ -1,0 +1,114 @@
+{
+  "maker": "Sonocotta",
+  "source": "https://github.com/sonocotta/esp32-audio-dock",
+  "notes": "Board metadata for detection only, not speaker profiles. 'project' matches the model Home Assistant shows for Sonocotta's factory firmware (ESPHome project 'sonocotta.<model>'); per-board configs without project: are recognised by their DAC component's entities instead.",
+  "families": [
+    {
+      "id": "louder",
+      "name": "Louder-ESP32",
+      "dac": "TAS5805M",
+      "power": "2 × 32 W (1 × 45 W bridged), 5–26 V",
+      "tunable": true,
+      "component": "tas58xx",
+      "project": "^louder-esp32(s3)?(-sendspin)?(-eth|-oled|-tft)?$"
+    },
+    {
+      "id": "louder-plus",
+      "name": "Louder-ESP32-Plus",
+      "dac": "TAS5825M",
+      "power": "2 × 45 W (1 × 53 W bridged), 5–26 V",
+      "tunable": true,
+      "component": "tas58xx",
+      "project": "^louder-esp32(s3)?-plus(-sendspin)?(-eth|-oled|-tft)?$"
+    },
+    {
+      "id": "louder-pro",
+      "name": "Louder-ESP32-Pro",
+      "dac": "TAS5825M",
+      "power": "2 × 45 W (1 × 53 W bridged), USB-PD",
+      "chips": ["esp32-s3"],
+      "tunable": true,
+      "component": "tas58xx",
+      "project": "^louder-esp32s3-pro(-sendspin)?(-eth|-oled|-tft)?$"
+    },
+    {
+      "id": "louder-mini",
+      "name": "Louder-ESP32-mini",
+      "dac": "TAS5805M",
+      "power": "1 × 5 W mono, USB-C",
+      "chips": ["esp32-s3"],
+      "tunable": true,
+      "component": "tas58xx",
+      "project": "^louder-esp32s3-mini-(42|55)(-sendspin)?(-eth|-oled|-tft)?$"
+    },
+    {
+      "id": "loud",
+      "name": "Loud-ESP32",
+      "dac": "2 × MAX98357",
+      "power": "2 × 5 W, USB-C",
+      "tunable": false,
+      "why": "its amplifiers have no adjustable DSP",
+      "project": "^loud-esp32(s3)?(-g)?(-sendspin)?(-eth|-oled|-tft)?$"
+    },
+    {
+      "id": "loud-plus",
+      "name": "Loud-ESP32-Plus",
+      "dac": "MA12070P",
+      "power": "2 × 60 W, 5–26 V",
+      "tunable": false,
+      "why": "Speaker Tuner can't drive the MA12070P's settings yet",
+      "component": "ma12070p",
+      "project": "^loud-esp32(s3)?-plus(-sendspin)?(-eth|-oled|-tft)?$"
+    },
+    {
+      "id": "hifi",
+      "name": "HiFi-ESP32",
+      "dac": "PCM5100A",
+      "power": "line out",
+      "tunable": false,
+      "why": "its DAC has no adjustable DSP",
+      "project": "^hifi-esp32(s3)?(-sendspin)?(-eth|-oled|-tft)?$"
+    },
+    {
+      "id": "hifi-plus",
+      "name": "HiFi-ESP32-Plus",
+      "dac": "PCM5122",
+      "power": "line out",
+      "tunable": false,
+      "why": "Speaker Tuner can't drive the PCM5122's DSP yet",
+      "component": "pcm5122",
+      "project": "^hifi-esp32(s3)?-plus(-sendspin)?(-eth|-oled|-tft)?$"
+    },
+    {
+      "id": "amped",
+      "name": "Amped-ESP32",
+      "dac": "PCM5100A + TPA3110/TPA3128",
+      "power": "2 × 25 W (40–60 W bridged)",
+      "tunable": false,
+      "why": "its DAC and amplifier have no adjustable DSP",
+      "project": "^amped-esp32(s3)?(-sendspin)?(-eth|-oled|-tft)?$"
+    },
+    {
+      "id": "amped-plus",
+      "name": "Amped-ESP32-Plus",
+      "dac": "PCM5122 + TPA3110/TPA3118",
+      "power": "2 × 25 W (40–60 W bridged)",
+      "tunable": false,
+      "why": "Speaker Tuner can't drive the PCM5122's DSP yet",
+      "component": "pcm5122",
+      "project": "^amped-esp32(s3)?-plus(-sendspin)?(-eth|-oled|-tft)?$"
+    }
+  ],
+  "components": {
+    "tas58xx": {
+      "name": "TAS58xx (esphome-tas58xx)",
+      "fingerprint": ["enable dac", "mixer mode", "any faults", "over temperature warning", "times faults cleared"],
+      "min": 2
+    },
+    "tas58xx-crossover": {
+      "name": "TAS58xx crossover fork",
+      "fingerprint": ["crossover frequency", "peq 1 gain", "invert polarity"],
+      "min": 2
+    }
+  }
+}

@@ -39,7 +39,7 @@ export function deviceTree(devices, rootId) {
  * ESPHome speakers: devices with ESPHome entities on them or on their sub-devices. A
  * sub-device is listed under its speaker, not as a speaker of its own.
  * @param {import('./connection.js').HaApi} api
- * @returns {Promise<Array<{ id: string, name: string, model?: string, subDevices: number }>>}
+ * @returns {Promise<Array<{ id: string, name: string, model?: string, manufacturer?: string, sw_version?: string, subDevices: number }>>}
  */
 export async function listEsphomeDevices(api) {
   const [devices, entities] = await Promise.all([api.deviceRegistry(), api.entityRegistry()]);
@@ -54,7 +54,7 @@ export async function listEsphomeDevices(api) {
   return tops
     .map((id) => {
       const d = byId.get(id);
-      return { id, name: deviceName(d), model: d.model, subDevices: deviceTree(devices, id).size - 1 };
+      return { id, name: deviceName(d), model: d.model, manufacturer: d.manufacturer, sw_version: d.sw_version, subDevices: deviceTree(devices, id).size - 1 };
     })
     .sort((a, b) => a.name.localeCompare(b.name));
 }

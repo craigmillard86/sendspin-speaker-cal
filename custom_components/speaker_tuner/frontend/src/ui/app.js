@@ -79,6 +79,8 @@ export class TunerApp {
     this.mics = {};
     /** @type {Record<string, any>} */
     this.targets = {};
+    /** @type {import('../ha/detect.js').BoardCatalogue | null} boards the tool can recognise */
+    this.boards = null;
     /** @type {DeviceMapping[]} */
     this.mappings = store.load('mappings', []);
     this.settings = {
@@ -181,6 +183,11 @@ export class TunerApp {
     for (const id of SHIPPED.profiles) this.profiles[id] = checkProfile(await get(`profiles/${id}.json`));
     for (const id of SHIPPED.mics) this.mics[id] = await get(`mics/${id}.json`);
     for (const id of SHIPPED.targets) this.targets[id] = await get(`targets/${id}.json`);
+    try {
+      this.boards = await get('boards/sonocotta.json');
+    } catch {
+      this.boards = null; // detection is a help, not a need
+    }
     for (const p of store.load('profiles', [])) this.profiles[p.id] = p;
     for (const m of store.load('mics', [])) this.mics[m.id] = m;
     for (const t of store.load('targets', [])) this.targets[t.id] = t;

@@ -372,3 +372,7 @@ summary .help-btn { margin: 0 4px; vertical-align: middle; }
 /* Measure list: a page at a time */
 .pager { display: flex; align-items: center; gap: 14px; padding: 10px 0 0; border-top: 1px solid var(--line); font-size: 0.86rem; flex-wrap: wrap; }
 .pager .pager-tests { margin-left: auto; }
+
+/* Speaker: what the board was recognised as */
+.detected { margin: 10px 0; font-size: 0.88rem; }
+.detected p { margin: 2px 0; }

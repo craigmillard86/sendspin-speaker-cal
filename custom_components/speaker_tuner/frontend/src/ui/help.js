@@ -39,8 +39,8 @@ export const HELP = {
     step: 'Set up',
     intro: 'Tells the tool what kind of speaker it is tuning, which Home Assistant entities control it, and where the test noise file lives.',
     todo: [
-      'Pick a speaker profile that matches your build, for example Louder ESP32 two-way.',
       'Press Discover devices and pick your ESPHome speaker. Its sub-devices (for example Tweeter, Mid, Crossover) are included.',
+      'The tool says what board it recognises (for example a Sonocotta Louder-ESP32-S3) and picks the profile that fits it best; the profile list shows how many of each profile\'s settings the device has. Change the profile if it picked the wrong one.',
       'Open Entity roles and check the guesses: each role (such as Mid PEQ 3 Gain or Mute tweeter) should point at the matching entity. Leave a role as not used if the speaker does not have it; features that need it hide themselves.',
       'Media player: pick the player that plays files. On Louder boards with Sendspin that is the … Player, not the … Sendspin Player.',
       'Give it a name and press Save speaker.',
@@ -51,6 +51,8 @@ export const HELP = {
     tips: [
       'Entity roles shows what discovery found ("Found 87 entities…"). If a kind of entity is missing, it is not exposed in the device YAML.',
       'You can set up several speakers; switch between them from the name at the top.',
+      'Recognition is "certain" when the firmware names its board (Sonocotta\'s factory firmware does, through ESPHome\'s project: setting) and "looks like" when it comes from the DAC\'s entities and the ESP32 chip. Adding project: to your YAML makes it certain.',
+      'HiFi, Loud and Amped boards have no DSP the tool can adjust: they can be measured, not tuned.',
     ],
   },
   mic: {

@@ -1,0 +1,738 @@
+{
+ "devices": [
+  {
+   "id": "dev1",
+   "name": "Louder S3 Cab Tweeter",
+   "name_by_user": null,
+   "model": "esp32-s3",
+   "via_device_id": "dev2",
+   "manufacturer": "Espressif",
+   "sw_version": "2026.10.1 (2026-10-31 11:59:39 +0000)"
+  },
+  {
+   "id": "dev3",
+   "name": "Louder S3 Cab Crossover",
+   "name_by_user": null,
+   "model": "esp32-s3",
+   "via_device_id": "dev2",
+   "manufacturer": "Espressif",
+   "sw_version": "2026.10.1 (2026-10-31 11:59:39 +0000)"
+  },
+  {
+   "id": "dev4",
+   "name": "Louder S3 Cab Mid",
+   "name_by_user": null,
+   "model": "esp32-s3",
+   "via_device_id": "dev2",
+   "manufacturer": "Espressif",
+   "sw_version": "2026.10.1 (2026-10-31 11:59:39 +0000)"
+  },
+  {
+   "id": "dev2",
+   "name": "My Speaker",
+   "name_by_user": "My Speaker",
+   "model": "esp32-s3",
+   "via_device_id": null,
+   "manufacturer": "Espressif",
+   "sw_version": "2026.10.1 (2026-10-31 11:59:39 +0000)"
+  }
+ ],
+ "entities": [
+  {
+   "entity_id": "number.my_speaker_air_shelf_gain",
+   "device_id": "dev1",
+   "platform": "esphome",
+   "name": "Air Shelf Gain",
+   "original_name": "Air Shelf Gain",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "switch.louder_s3_cab_tweeter_invert_polarity",
+   "device_id": "dev1",
+   "platform": "esphome",
+   "name": "Invert Polarity",
+   "original_name": "Invert Polarity",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "switch.louder_s3_cab_tweeter_mute",
+   "device_id": "dev1",
+   "platform": "esphome",
+   "name": "Mute",
+   "original_name": "Mute",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "binary_sensor.louder_s3_cab_tweeter_over_current",
+   "device_id": "dev1",
+   "platform": "esphome",
+   "name": "Over Current",
+   "original_name": "Over Current",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.louder_s3_cab_tweeter_gain",
+   "device_id": "dev1",
+   "platform": "esphome",
+   "name": "Gain",
+   "original_name": "Gain",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.louder_s3_cab_tweeter_delay",
+   "device_id": "dev1",
+   "platform": "esphome",
+   "name": "Delay",
+   "original_name": "Delay",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.louder_s3_cab_tweeter_notch_frequency",
+   "device_id": "dev1",
+   "platform": "esphome",
+   "name": "Notch Frequency",
+   "original_name": "Notch Frequency",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.louder_s3_cab_tweeter_notch_gain",
+   "device_id": "dev1",
+   "platform": "esphome",
+   "name": "Notch Gain",
+   "original_name": "Notch Gain",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.louder_s3_cab_tweeter_notch_q",
+   "device_id": "dev1",
+   "platform": "esphome",
+   "name": "Notch Q",
+   "original_name": "Notch Q",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.louder_s3_cab_tweeter_peq_1_frequency",
+   "device_id": "dev1",
+   "platform": "esphome",
+   "name": "PEQ 1 Frequency",
+   "original_name": "PEQ 1 Frequency",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.louder_s3_cab_tweeter_peq_1_gain",
+   "device_id": "dev1",
+   "platform": "esphome",
+   "name": "PEQ 1 Gain",
+   "original_name": "PEQ 1 Gain",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.louder_s3_cab_tweeter_peq_1_q",
+   "device_id": "dev1",
+   "platform": "esphome",
+   "name": "PEQ 1 Q",
+   "original_name": "PEQ 1 Q",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.louder_s3_cab_tweeter_peq_2_frequency",
+   "device_id": "dev1",
+   "platform": "esphome",
+   "name": "PEQ 2 Frequency",
+   "original_name": "PEQ 2 Frequency",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.louder_s3_cab_tweeter_peq_2_gain",
+   "device_id": "dev1",
+   "platform": "esphome",
+   "name": "PEQ 2 Gain",
+   "original_name": "PEQ 2 Gain",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.louder_s3_cab_tweeter_peq_2_q",
+   "device_id": "dev1",
+   "platform": "esphome",
+   "name": "PEQ 2 Q",
+   "original_name": "PEQ 2 Q",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.louder_s3_cab_tweeter_peq_3_frequency",
+   "device_id": "dev1",
+   "platform": "esphome",
+   "name": "PEQ 3 Frequency",
+   "original_name": "PEQ 3 Frequency",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.louder_s3_cab_tweeter_peq_3_gain",
+   "device_id": "dev1",
+   "platform": "esphome",
+   "name": "PEQ 3 Gain",
+   "original_name": "PEQ 3 Gain",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.louder_s3_cab_tweeter_peq_3_q",
+   "device_id": "dev1",
+   "platform": "esphome",
+   "name": "PEQ 3 Q",
+   "original_name": "PEQ 3 Q",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.louder_s3_cab_tweeter_peq_4_frequency",
+   "device_id": "dev1",
+   "platform": "esphome",
+   "name": "PEQ 4 Frequency",
+   "original_name": "PEQ 4 Frequency",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.louder_s3_cab_tweeter_peq_4_gain",
+   "device_id": "dev1",
+   "platform": "esphome",
+   "name": "PEQ 4 Gain",
+   "original_name": "PEQ 4 Gain",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.louder_s3_cab_tweeter_peq_4_q",
+   "device_id": "dev1",
+   "platform": "esphome",
+   "name": "PEQ 4 Q",
+   "original_name": "PEQ 4 Q",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.louder_s3_cab_tweeter_peq_5_frequency",
+   "device_id": "dev1",
+   "platform": "esphome",
+   "name": "PEQ 5 Frequency",
+   "original_name": "PEQ 5 Frequency",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.louder_s3_cab_tweeter_peq_5_gain",
+   "device_id": "dev1",
+   "platform": "esphome",
+   "name": "PEQ 5 Gain",
+   "original_name": "PEQ 5 Gain",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.louder_s3_cab_tweeter_peq_5_q",
+   "device_id": "dev1",
+   "platform": "esphome",
+   "name": "PEQ 5 Q",
+   "original_name": "PEQ 5 Q",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.louder_s3_cab_tweeter_peq_6_frequency",
+   "device_id": "dev1",
+   "platform": "esphome",
+   "name": "PEQ 6 Frequency",
+   "original_name": "PEQ 6 Frequency",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.louder_s3_cab_tweeter_peq_6_gain",
+   "device_id": "dev1",
+   "platform": "esphome",
+   "name": "PEQ 6 Gain",
+   "original_name": "PEQ 6 Gain",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.louder_s3_cab_tweeter_peq_6_q",
+   "device_id": "dev1",
+   "platform": "esphome",
+   "name": "PEQ 6 Q",
+   "original_name": "PEQ 6 Q",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "sensor.louder_s3_cab_tweeter_peak_gain",
+   "device_id": "dev1",
+   "platform": "esphome",
+   "name": "Peak Gain",
+   "original_name": "Peak Gain",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "select.louder_s3_cab_tweeter_peq_1_type",
+   "device_id": "dev1",
+   "platform": "esphome",
+   "name": "PEQ 1 Type",
+   "original_name": "PEQ 1 Type",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "select.louder_s3_cab_tweeter_peq_2_type",
+   "device_id": "dev1",
+   "platform": "esphome",
+   "name": "PEQ 2 Type",
+   "original_name": "PEQ 2 Type",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "select.louder_s3_cab_tweeter_peq_3_type",
+   "device_id": "dev1",
+   "platform": "esphome",
+   "name": "PEQ 3 Type",
+   "original_name": "PEQ 3 Type",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "select.louder_s3_cab_tweeter_peq_4_type",
+   "device_id": "dev1",
+   "platform": "esphome",
+   "name": "PEQ 4 Type",
+   "original_name": "PEQ 4 Type",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "select.louder_s3_cab_tweeter_peq_5_type",
+   "device_id": "dev1",
+   "platform": "esphome",
+   "name": "PEQ 5 Type",
+   "original_name": "PEQ 5 Type",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "select.louder_s3_cab_tweeter_peq_6_type",
+   "device_id": "dev1",
+   "platform": "esphome",
+   "name": "PEQ 6 Type",
+   "original_name": "PEQ 6 Type",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "switch.my_speaker_loudness",
+   "device_id": "dev3",
+   "platform": "esphome",
+   "name": "Loudness",
+   "original_name": "Loudness",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "switch.my_speaker_headroom_compensation",
+   "device_id": "dev3",
+   "platform": "esphome",
+   "name": "Headroom Compensation",
+   "original_name": "Headroom Compensation",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.my_speaker_loudness_reference",
+   "device_id": "dev3",
+   "platform": "esphome",
+   "name": "Loudness Reference",
+   "original_name": "Loudness Reference",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "select.my_speaker_eq_mode",
+   "device_id": "dev3",
+   "platform": "esphome",
+   "name": "EQ Mode",
+   "original_name": "EQ Mode",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "select.my_speaker_tweeter_channel",
+   "device_id": "dev3",
+   "platform": "esphome",
+   "name": "Tweeter Channel",
+   "original_name": "Tweeter Channel",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.louder_s3_cab_crossover_frequency",
+   "device_id": "dev3",
+   "platform": "esphome",
+   "name": "Frequency",
+   "original_name": "Frequency",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "button.louder_s3_cab_crossover_export_to_log",
+   "device_id": "dev3",
+   "platform": "esphome",
+   "name": "Export to Log",
+   "original_name": "Export to Log",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "button.louder_s3_cab_crossover_reset_to_yaml",
+   "device_id": "dev3",
+   "platform": "esphome",
+   "name": "Reset to YAML",
+   "original_name": "Reset to YAML",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "select.louder_s3_cab_crossover_filter",
+   "device_id": "dev3",
+   "platform": "esphome",
+   "name": "Filter",
+   "original_name": "Filter",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.my_speaker_subsonic_filter",
+   "device_id": "dev4",
+   "platform": "esphome",
+   "name": "Subsonic Filter",
+   "original_name": "Subsonic Filter",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.my_speaker_baffle_width",
+   "device_id": "dev4",
+   "platform": "esphome",
+   "name": "Baffle Width",
+   "original_name": "Baffle Width",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.my_speaker_linkwitz_box_f0",
+   "device_id": "dev4",
+   "platform": "esphome",
+   "name": "Linkwitz Box f0",
+   "original_name": "Linkwitz Box f0",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.my_speaker_linkwitz_box_q0",
+   "device_id": "dev4",
+   "platform": "esphome",
+   "name": "Linkwitz Box Q0",
+   "original_name": "Linkwitz Box Q0",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.my_speaker_linkwitz_target_fp",
+   "device_id": "dev4",
+   "platform": "esphome",
+   "name": "Linkwitz Target fp",
+   "original_name": "Linkwitz Target fp",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.my_speaker_linkwitz_target_qp",
+   "device_id": "dev4",
+   "platform": "esphome",
+   "name": "Linkwitz Target Qp",
+   "original_name": "Linkwitz Target Qp",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "select.my_speaker_baffle_placement",
+   "device_id": "dev4",
+   "platform": "esphome",
+   "name": "Baffle Placement",
+   "original_name": "Baffle Placement",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "switch.louder_s3_cab_mid_invert_polarity",
+   "device_id": "dev4",
+   "platform": "esphome",
+   "name": "Invert Polarity",
+   "original_name": "Invert Polarity",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "switch.louder_s3_cab_mid_mute",
+   "device_id": "dev4",
+   "platform": "esphome",
+   "name": "Mute",
+   "original_name": "Mute",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "binary_sensor.louder_s3_cab_mid_over_current",
+   "device_id": "dev4",
+   "platform": "esphome",
+   "name": "Over Current",
+   "original_name": "Over Current",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.louder_s3_cab_mid_gain",
+   "device_id": "dev4",
+   "platform": "esphome",
+   "name": "Gain",
+   "original_name": "Gain",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.louder_s3_cab_mid_delay",
+   "device_id": "dev4",
+   "platform": "esphome",
+   "name": "Delay",
+   "original_name": "Delay",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.louder_s3_cab_mid_peq_1_frequency",
+   "device_id": "dev4",
+   "platform": "esphome",
+   "name": "PEQ 1 Frequency",
+   "original_name": "PEQ 1 Frequency",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.louder_s3_cab_mid_peq_1_gain",
+   "device_id": "dev4",
+   "platform": "esphome",
+   "name": "PEQ 1 Gain",
+   "original_name": "PEQ 1 Gain",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.louder_s3_cab_mid_peq_1_q",
+   "device_id": "dev4",
+   "platform": "esphome",
+   "name": "PEQ 1 Q",
+   "original_name": "PEQ 1 Q",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.louder_s3_cab_mid_peq_2_frequency",
+   "device_id": "dev4",
+   "platform": "esphome",
+   "name": "PEQ 2 Frequency",
+   "original_name": "PEQ 2 Frequency",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.louder_s3_cab_mid_peq_2_gain",
+   "device_id": "dev4",
+   "platform": "esphome",
+   "name": "PEQ 2 Gain",
+   "original_name": "PEQ 2 Gain",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.louder_s3_cab_mid_peq_2_q",
+   "device_id": "dev4",
+   "platform": "esphome",
+   "name": "PEQ 2 Q",
+   "original_name": "PEQ 2 Q",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.louder_s3_cab_mid_peq_3_frequency",
+   "device_id": "dev4",
+   "platform": "esphome",
+   "name": "PEQ 3 Frequency",
+   "original_name": "PEQ 3 Frequency",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.louder_s3_cab_mid_peq_3_gain",
+   "device_id": "dev4",
+   "platform": "esphome",
+   "name": "PEQ 3 Gain",
+   "original_name": "PEQ 3 Gain",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.louder_s3_cab_mid_peq_3_q",
+   "device_id": "dev4",
+   "platform": "esphome",
+   "name": "PEQ 3 Q",
+   "original_name": "PEQ 3 Q",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.louder_s3_cab_mid_peq_4_frequency",
+   "device_id": "dev4",
+   "platform": "esphome",
+   "name": "PEQ 4 Frequency",
+   "original_name": "PEQ 4 Frequency",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.louder_s3_cab_mid_peq_4_gain",
+   "device_id": "dev4",
+   "platform": "esphome",
+   "name": "PEQ 4 Gain",
+   "original_name": "PEQ 4 Gain",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.louder_s3_cab_mid_peq_4_q",
+   "device_id": "dev4",
+   "platform": "esphome",
+   "name": "PEQ 4 Q",
+   "original_name": "PEQ 4 Q",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.louder_s3_cab_mid_peq_5_frequency",
+   "device_id": "dev4",
+   "platform": "esphome",
+   "name": "PEQ 5 Frequency",
+   "original_name": "PEQ 5 Frequency",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.louder_s3_cab_mid_peq_5_gain",
+   "device_id": "dev4",
+   "platform": "esphome",
+   "name": "PEQ 5 Gain",
+   "original_name": "PEQ 5 Gain",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.louder_s3_cab_mid_peq_5_q",
+   "device_id": "dev4",
+   "platform": "esphome",
+   "name": "PEQ 5 Q",
+   "original_name": "PEQ 5 Q",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.louder_s3_cab_mid_peq_6_frequency",
+   "device_id": "dev4",
+   "platform": "esphome",
+   "name": "PEQ 6 Frequency",
+   "original_name": "PEQ 6 Frequency",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.louder_s3_cab_mid_peq_6_gain",
+   "device_id": "dev4",
+   "platform": "esphome",
+   "name": "PEQ 6 Gain",
+   "original_name": "PEQ 6 Gain",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "number.louder_s3_cab_mid_peq_6_q",
+   "device_id": "dev4",
+   "platform": "esphome",
+   "name": "PEQ 6 Q",
+   "original_name": "PEQ 6 Q",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "sensor.louder_s3_cab_mid_peak_gain",
+   "device_id": "dev4",
+   "platform": "esphome",
+   "name": "Peak Gain",
+   "original_name": "Peak Gain",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "select.louder_s3_cab_mid_peq_1_type",
+   "device_id": "dev4",
+   "platform": "esphome",
+   "name": "PEQ 1 Type",
+   "original_name": "PEQ 1 Type",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "select.louder_s3_cab_mid_peq_2_type",
+   "device_id": "dev4",
+   "platform": "esphome",
+   "name": "PEQ 2 Type",
+   "original_name": "PEQ 2 Type",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "select.louder_s3_cab_mid_peq_3_type",
+   "device_id": "dev4",
+   "platform": "esphome",
+   "name": "PEQ 3 Type",
+   "original_name": "PEQ 3 Type",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "select.louder_s3_cab_mid_peq_4_type",
+   "device_id": "dev4",
+   "platform": "esphome",
+   "name": "PEQ 4 Type",
+   "original_name": "PEQ 4 Type",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "select.louder_s3_cab_mid_peq_5_type",
+   "device_id": "dev4",
+   "platform": "esphome",
+   "name": "PEQ 5 Type",
+   "original_name": "PEQ 5 Type",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "select.louder_s3_cab_mid_peq_6_type",
+   "device_id": "dev4",
+   "platform": "esphome",
+   "name": "PEQ 6 Type",
+   "original_name": "PEQ 6 Type",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "switch.my_speaker_enable_dac",
+   "device_id": "dev2",
+   "platform": "esphome",
+   "name": "Enable DAC",
+   "original_name": "Enable DAC",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "binary_sensor.my_speaker_any_faults",
+   "device_id": "dev2",
+   "platform": "esphome",
+   "name": "Any Faults",
+   "original_name": "Any Faults",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "binary_sensor.my_speaker_over_temperature_warning",
+   "device_id": "dev2",
+   "platform": "esphome",
+   "name": "Over Temperature Warning",
+   "original_name": "Over Temperature Warning",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "media_player.my_speaker_louder_s3_cab_sendspin_player",
+   "device_id": "dev2",
+   "platform": "esphome",
+   "name": "Louder S3 Cab Sendspin Player",
+   "original_name": "Louder S3 Cab Sendspin Player",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "media_player.my_speaker_louder_s3_cab_player",
+   "device_id": "dev2",
+   "platform": "esphome",
+   "name": "Louder S3 Cab Player",
+   "original_name": "Louder S3 Cab Player",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "sensor.my_speaker_times_faults_cleared",
+   "device_id": "dev2",
+   "platform": "esphome",
+   "name": "Times Faults Cleared",
+   "original_name": "Times Faults Cleared",
+   "disabled_by": null
+  },
+  {
+   "entity_id": "select.my_speaker_mixer_mode",
+   "device_id": "dev2",
+   "platform": "esphome",
+   "name": "Mixer Mode",
+   "original_name": "Mixer Mode",
+   "disabled_by": null
+  }
+ ]
+}

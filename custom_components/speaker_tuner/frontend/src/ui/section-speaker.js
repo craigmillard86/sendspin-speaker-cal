@@ -6,6 +6,7 @@ import { h, field, select, download, pickTextFile } from './dom.js';
 import { card } from './app.js';
 import * as store from './store.js';
 import { listEsphomeDevices, deviceEntities, suggestMapping } from '../ha/discover.js';
+import { detectBoard, rankProfiles } from '../ha/detect.js';
 import { uploadMedia, MEDIA_FOLDER } from '../ha/connection.js';
 import { Playback } from '../ha/playback.js';
 import { expandRoles, checkProfile } from '../profiles/profile.js';
@@ -68,7 +69,15 @@ export function renderSpeaker(app) {
     { disabled: !!app.busy },
   );
 
-  const profiles = select(Object.values(app.profiles).map((p) => ({ value: p.id, label: p.name })), d.profile, (id) => {
+  // with a device picked, each profile says how many of its settings the device has, best first
+  /** @type {Array<{ id: string, found: number, total: number }> | undefined} */
+  const ranking = /** @type {any} */ (d).ranking;
+  const order = ranking ? ranking.map((r) => app.profiles[r.id]).filter(Boolean) : Object.values(app.profiles);
+  const fit = (/** @type {string} */ id) => {
+    const r = ranking?.find((x) => x.id === id);
+    return r ? ` · ${r.found} of ${r.total} settings found` : '';
+  };
+  const profiles = select(order.map((p) => ({ value: p.id, label: `${p.name}${fit(p.id)}` })), d.profile, (id) => {
     d.profile = id;
     if (d.candidates) d.entities = suggestMapping(app.profiles[id], d.candidates);
     app.refresh('speaker');
@@ -103,7 +112,18 @@ export function renderSpeaker(app) {
     const dev = /** @type {any} */ (app).devices?.find((/** @type {any} */ x) => x.id === id);
     d.device_id = id;
     d.candidates = await deviceEntities(/** @type {any} */ (app.api), id);
-    d.entities = suggestMapping(profile, d.candidates);
+    // which board this is, and the profile that fits it best
+    const dd = /** @type {any} */ (d);
+    if (app.boards && dev) {
+      const det = detectBoard(dev, d.candidates, app.boards);
+      dd.board = { name: det.name, confidence: det.confidence, tunable: det.tunable, why: det.family?.why ?? null, reasons: det.reasons };
+      dd.ranking = rankProfiles(app.profiles, d.candidates, det.components);
+    } else {
+      dd.ranking = rankProfiles(app.profiles, d.candidates);
+    }
+    const best = dd.ranking[0];
+    if (best && best.found > 0) d.profile = best.id;
+    d.entities = suggestMapping(app.profiles[d.profile], d.candidates);
     if (!d.name) d.name = dev?.name ?? id;
     if (!d.id) d.id = `m${Date.now().toString(36)}`;
   });
@@ -111,7 +131,8 @@ export function renderSpeaker(app) {
   const saveDraft = async () => {
     if (!d.name) d.name = 'My speaker';
     if (!d.id) d.id = `m${Date.now().toString(36)}`;
-    const { candidates, ...mapping } = d;
+    // the board stays with the speaker; the profile ranking was only for picking
+    const { candidates, ranking, ...mapping } = /** @type {any} */ (d);
     app.saveMapping(mapping);
     await app.useMapping(mapping.id);
     app.notify(`Saved "${mapping.name}".`, 'ok');
@@ -129,7 +150,8 @@ export function renderSpeaker(app) {
     field('Name', /** @type {HTMLElement} */ (h('input', { value: d.name, placeholder: 'Living room left', oninput: (/** @type {any} */ e) => (d.name = e.target.value) }))),
     h('div', { class: 'row' },
       h('button', { onclick: discover, disabled: !ready || !!app.busy || app.demo }, 'Discover devices'),
-      devices.length ? select([{ value: '', label: 'Pick the ESPHome device…' }, ...devices.map((/** @type {any} */ x) => ({ value: x.id, label: `${x.name}${x.model ? ` (${x.model})` : ''}${x.subDevices ? ` · ${x.subDevices} sub-device${x.subDevices === 1 ? '' : 's'}` : ''}` }))], d.device_id ?? '', pickDevice) : null),
+      devices.length ? select([{ value: '', label: 'Pick the ESPHome device…' }, ...devices.map((/** @type {any} */ x) => ({ value: x.id, label: `${x.name}${x.manufacturer && x.manufacturer.toLowerCase() !== 'espressif' ? ` (${x.manufacturer} ${x.model})` : x.model ? ` (${x.model})` : ''}${x.subDevices ? ` · ${x.subDevices} sub-device${x.subDevices === 1 ? '' : 's'}` : ''}` }))], d.device_id ?? '', pickDevice) : null),
+    detected(app, d),
     !ready ? h('p', { class: 'help' }, 'Connect to Home Assistant first, or try the demo.') : null,
     profile ? roleEditor(app, d, profile) : null,
     h('div', { class: 'row' }, h('button', { class: 'primary', onclick: saveDraft, disabled: !profile || !!app.busy }, 'Save speaker'),
@@ -143,6 +165,21 @@ export function renderSpeaker(app) {
   ];
   const summary = app.mapping ? `${app.mapping.name} · ${app.profile?.name ?? 'unknown profile'}` : 'No speaker set up';
   return card('Speaker', summary, body, !app.mapping);
+}
+
+/**
+ * What the board was recognised as, and which profile was picked for it.
+ * @param {import('./app.js').TunerApp} app @param {Draft} d
+ */
+function detected(app, d) {
+  const b = /** @type {any} */ (d).board;
+  if (!b) return null;
+  const r = /** @type {any} */ (d).ranking?.find((/** @type {any} */ x) => x.id === d.profile);
+  const sure = b.confidence === 'certain' ? 'Detected' : b.confidence === 'likely' ? 'Looks like' : 'Not recognised';
+  return h('div', { class: `detected ${b.tunable === false ? 'notice notice-warn' : ''}` },
+    h('p', null, h('b', null, `${sure}: ${b.name}`), b.reasons?.length ? h('span', { class: 'muted' }, ` (${b.reasons.join('; ')})`) : null),
+    b.tunable === false ? h('p', null, `This board can't be tuned: ${b.why ?? 'it has no adjustable DSP'}. You can still measure it.`) : null,
+    r ? h('p', { class: 'muted' }, `Profile picked to match: ${app.profiles[d.profile]?.name} (${r.found} of ${r.total} settings found). Change it above if it's wrong.`) : null);
 }
 
 /**
