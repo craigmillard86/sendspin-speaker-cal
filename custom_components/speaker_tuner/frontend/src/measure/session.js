@@ -43,7 +43,7 @@ export function sleep(ms, signal) {
 export class MicMeasurer {
   /**
    * @param {{ recorder: import('../audio/recorder.js').Recorder, playback: import('../ha/playback.js').Playback,
-   *   mediaUrl: string, mic: { name: string, tier: string, cal?: { freqs: number[], db: number[] } | null },
+   *   mediaUrl: string | (() => Promise<string>), mic: { name: string, tier: string, cal?: { freqs: number[], db: number[] } | null },
    *   timeScale?: number }} deps timeScale < 1 runs the waits faster (tests only)
    */
   constructor({ recorder, playback, mediaUrl, mic, timeScale = 1 }) {
@@ -51,6 +51,8 @@ export class MicMeasurer {
     this.recorder = recorder;
     this.playback = playback;
     this.mediaUrl = mediaUrl;
+    /** @type {string | null} */
+    this.resolvedUrl = typeof mediaUrl === 'string' ? mediaUrl : null;
     this.mic = mic;
     this.name = mic.name;
     /** @type {number | null} */
@@ -78,7 +80,7 @@ export class MicMeasurer {
     try {
       onStatus?.('Listening to the room…');
       await sleep(BACKGROUND_S * 1000 * this.t, signal);
-      await this.playback.play(this.mediaUrl);
+      await this.playback.play(await this.media());
       onStatus?.('Waiting for the noise to start…');
       const started = Date.now();
       await this.playback.waitUntilPlaying?.(ONSET_TIMEOUT_S * 1000 * this.t, signal);
@@ -126,6 +128,12 @@ export class MicMeasurer {
     return measurementFromPositions(req, takes, { mic: this.mic, volume: this.volume, cal: this.mic.cal ?? null });
   }
 
+  /** The test noise's address; resolved (and uploaded if need be) the first time it is played. */
+  async media() {
+    if (this.resolvedUrl === null) this.resolvedUrl = await /** @type {() => Promise<string>} */ (this.mediaUrl)();
+    return this.resolvedUrl;
+  }
+
   /**
    * Raise the volume from `start` in `step`s until the mic RMS reaches targetDbfs, never past
    * `cap`. Stops with an error if the mic clips, since that means its gain is too high.
@@ -142,7 +150,7 @@ export class MicMeasurer {
       onStatus?.('Listening to the room…');
       await sleep(BACKGROUND_S * 1000 * this.t, signal);
       const backgroundDbfs = levels(rec.peek()).rmsDbfs;
-      await this.playback.play(this.mediaUrl);
+      await this.playback.play(await this.media());
       // whether the noise plays is HA's to say, not the mic's: at the starting volume it can be
       // far too quiet to hear (a speaker's volume often spans 60 dB), so the volume goes up
       // step by step from here whether the mic hears anything yet or not
@@ -169,7 +177,7 @@ export class MicMeasurer {
         volume = Math.round((volume + step) * 100) / 100;
         await this.setVolume(volume);
         if (Date.now() - played > (NOISE_FILE_S - 4) * 1000 * this.t) {
-          await this.playback.play(this.mediaUrl);
+          await this.playback.play(await this.media());
           played = Date.now();
           await sleep(1500 * this.t, signal);
         }

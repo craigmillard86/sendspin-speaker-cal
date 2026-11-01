@@ -136,9 +136,9 @@ speaker there), the four steps **Set up · Measure · Tune · Save**, and the ch
 - **?** next to every section and Tune step opens its help: what to do, why it matters, and
   what you get. **Help** (top right) lists every topic.
 
-**Set up** is a checklist: Home Assistant, the speaker, the microphone and the test noise.
+**Set up** is a checklist: Home Assistant, the speaker and the microphone.
 Each item's button opens that part on its own (the **Checklist** button at its top comes back). Measure
-and Tune stay locked until all four are ticked, and Save until there is a speaker; tapping a
+and Tune stay locked until all three are ticked, and Save until there is a speaker; tapping a
 locked step says what is missing.
 
 **Tune** is a list of steps with one open at a time. Press a step to open it; after it has
@@ -162,9 +162,16 @@ run, **Next step** opens the next one.
    *recommended settings*, and an export that is that same file with the tuned values filled
    in, ready to flash. Passwords and keys are replaced by `!secret` references before anything
    is stored. Settings in `packages:` or `!include` files are not followed.
-6. **Test noise:** press **Upload to Home Assistant**. This puts a 20-second pink noise file
-   (48 kHz, 16-bit, mono, with 1-second fades) into your media folder at
-   `/media/speaker-tuner/` and fills in its address. Press **Play 3 s** to check you hear it.
+6. **Test noise:** nothing to do. The first time the tool needs it, it puts a 20-second pink
+   noise file (48 kHz, 16-bit, mono, with 1-second fades) into your media folder at
+   `/media/speaker-tuner/`, once for every speaker, and puts it back if it has been deleted.
+   **Test noise (advanced)** has **Play 3 s** to check you hear it, and a field for a file you
+   host somewhere else.
+
+To tidy up, **Manage speakers** (under the speaker list, or in the speaker name menu at the
+top) lists every speaker with its measurements and when it was last used, to open or delete
+it. Deleting removes what the tool keeps for that speaker (its measurements, tuning results
+and history) from every browser; the speaker keeps its own settings.
 
    To place the file yourself instead: press **Download WAV**, copy the file into Home
    Assistant's `/media` folder (Samba add-on: the `media` share), and enter

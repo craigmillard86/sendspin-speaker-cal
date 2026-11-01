@@ -10,7 +10,7 @@ import { detectBoard, rankProfiles } from '../ha/detect.js';
 import { profileFromYaml } from '../profiles/esphome-yaml.js';
 import { shareableProfile, shareLink } from '../profiles/share.js';
 import { SHIPPED } from './app.js';
-import { uploadMedia, MEDIA_FOLDER } from '../ha/connection.js';
+import { uploadMedia, MEDIA_FOLDER, NOISE_FILE } from '../ha/connection.js';
 import { Playback } from '../ha/playback.js';
 import { expandRoles, checkProfile } from '../profiles/profile.js';
 import { validate } from '../profiles/validate.js';
@@ -18,7 +18,6 @@ import { testSignal } from '../dsp/pink.js';
 import { encodeWav16 } from '../dsp/wav.js';
 import { sleep } from '../measure/session.js';
 
-const NOISE_FILE = 'speaker-tuner-pink-20s.wav';
 const GROUP_TITLES = {
   playback: 'Playback', crossover: 'Crossover', drivers: 'Drivers', compensation: 'Compensation', monitor: 'Monitoring and buttons',
 };
@@ -190,6 +189,7 @@ export function renderSpeaker(app) {
 
   const devices = /** @type {any} */ (app).devices ?? [];
   const body = [
+    app.mappings.length > 1 || (app.mappings.length && !app.demo) ? h('div', { class: 'row tight' }, h('button', { class: 'link', onclick: () => app.focusSetup('speakers') }, `Manage speakers (${app.mappings.length})`)) : null,
     field('Speaker', speakers, store.inHomeAssistant()
       ? 'Speakers, profiles, measurements and tuning results are saved in Home Assistant: every browser sees them.'
       : app.mode === 'standalone' && !app.demo ? 'Saved in this browser. With the Speaker Tuner integration installed in Home Assistant they are saved there instead, for every browser.' : 'Saved in this browser.'),
@@ -342,20 +342,22 @@ function noiseFile(app, d) {
   });
   const tryIt = () => app.run('Playing 3 seconds of test noise', async (signal) => {
     const player = d.entities.media_player;
-    if (!player || !d.media_url) throw new Error('Map the media player and set the test noise URL first.');
+    if (!player) throw new Error('Map the media player first.');
+    const url = d.media_url || (await app.ensureNoise(/** @type {any} */ ({ ...d, entities: d.entities })));
+    d.media_url = url;
     const p = new Playback(/** @type {any} */ (app.api), player);
-    await p.play(d.media_url);
+    await p.play(url);
     try {
       await sleep(3000, signal);
     } finally {
       await p.stop();
     }
   });
-  return h('fieldset', null, h('legend', null, 'Test noise'),
-    h('p', { class: 'help' }, '20 seconds of pink noise (48 kHz, 16-bit, mono) with 1 second fades. Upload it to Home Assistant\'s media folder in one click, or download it and place it there yourself.'),
+  return h('details', { class: 'roles advanced' }, h('summary', null, 'Test noise (advanced)'),
+    h('p', { class: 'help' }, `20 seconds of pink noise (48 kHz, 16-bit, mono) with 1 second fades. The tool puts it in Home Assistant's media folder by itself the first time it is needed, and every speaker uses it.${app.mapping?.media_url ? '' : ' Nothing to do here unless you host the file somewhere else.'}`),
     h('div', { class: 'row' },
       h('button', { onclick: () => download(NOISE_FILE, wav(), 'audio/wav') }, 'Download WAV'),
       h('button', { onclick: upload, disabled: !app.api || app.demo || !!app.busy }, 'Upload to Home Assistant'),
       h('button', { onclick: tryIt, disabled: !app.api || app.demo || !!app.busy }, 'Play 3 s')),
-    field('Test noise media URL', url, 'Filled in after uploading. For a file you copied into /media yourself, use media-source://media_source/local/<file name>.'));
+    field('Test noise media URL', url, 'Filled in automatically. For a file you host yourself, put its address here: media-source://media_source/local/<file name> for one in /media.'));
 }

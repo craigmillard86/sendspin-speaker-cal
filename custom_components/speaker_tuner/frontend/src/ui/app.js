@@ -5,7 +5,9 @@
 import { h } from './dom.js';
 import { ResponseChart } from './chart.js';
 import * as store from './store.js';
-import { HaApi, connectWithToken } from '../ha/connection.js';
+import { HaApi, connectWithToken, uploadMedia, MEDIA_FOLDER, NOISE_FILE } from '../ha/connection.js';
+import { testSignal } from '../dsp/pink.js';
+import { encodeWav16 } from '../dsp/wav.js';
 import { DspWriter } from '../ha/dsp-writer.js';
 import { Playback } from '../ha/playback.js';
 import { expandRoles, settingRoles, checkProfile } from '../profiles/profile.js';
@@ -25,11 +27,12 @@ import { renderTune } from './section-tune.js';
 import { renderSettings } from './section-settings.js';
 import { renderExport } from './section-export.js';
 import { renderReady } from './section-ready.js';
+import { renderSpeakers } from './section-speakers.js';
 import { HELP, HELP_ORDER, HELP_ALIAS } from './help.js';
 
 /** The four steps and the cards each one shows. */
 export const STEPS = [
-  { id: 'setup', label: 'Set up', sections: ['ready', 'connect', 'speaker', 'mic'] },
+  { id: 'setup', label: 'Set up', sections: ['ready', 'connect', 'speaker', 'mic', 'speakers'] },
   { id: 'measure', label: 'Measure', sections: ['measure'] },
   { id: 'tune', label: 'Tune', sections: ['tune'] },
   { id: 'save', label: 'Save', sections: ['export'] },
@@ -53,7 +56,7 @@ function packTuning(app) {
     if (ArrayBuffer.isView(x)) return Array.from(/** @type {any} */ (x));
     return x;
   })));
-  return { results: pack(app.results), refineResult: pack(a.refineResult), peqSet: pack(a.peqSet), history: a.history ?? [] };
+  return { results: pack(app.results), refineResult: pack(a.refineResult), peqSet: pack(a.peqSet), history: a.applyLog ?? [] };
 }
 
 /** @param {any} v @param {Map<string, any>} byId */
@@ -161,7 +164,7 @@ export class TunerApp {
     this.restoreLoudness = false;
     /** @type {Record<string, (app: TunerApp) => HTMLElement>} */
     this.renderers = {
-      connect: renderConnect, ready: renderReady, speaker: renderSpeaker, mic: renderMic, measure: renderMeasure,
+      connect: renderConnect, ready: renderReady, speaker: renderSpeaker, mic: renderMic, speakers: renderSpeakers, measure: renderMeasure,
       tune: renderTune, settings: renderSettings, export: renderExport,
     };
     /** the step on screen */
@@ -421,7 +424,8 @@ export class TunerApp {
     this.results = revive(t?.results) ?? {};
     a.refineResult = revive(t?.refineResult) ?? null;
     a.peqSet = revive(t?.peqSet) ?? null;
-    a.history = t?.history ?? [];
+    // every Apply on this speaker (not the Messages list, this.history; 0.3.0 saved that here by mistake)
+    a.applyLog = (t?.history ?? []).filter((/** @type {any} */ x) => x && x.at && x.what);
   }
 
   /**
@@ -430,7 +434,7 @@ export class TunerApp {
    */
   logApplied(what, before, after) {
     const a = /** @type {any} */ (this);
-    a.history = [...(a.history ?? []), { at: new Date().toISOString(), what, before, after }].slice(-50);
+    a.applyLog = [...(a.applyLog ?? []), { at: new Date().toISOString(), what, before, after }].slice(-50);
     this.persist();
   }
 
@@ -495,11 +499,43 @@ export class TunerApp {
     if (!this.recorder) throw new Error('Pick the microphone in setup first.');
     const player = this.mapping?.entities.media_player;
     if (!player) throw new Error('Map the media player in setup first.');
-    if (!this.mapping?.media_url) throw new Error('Set the test noise URL in setup first.');
+    const mapping = this.mapping;
     return new MicMeasurer({
       recorder: this.recorder, playback: new Playback(/** @type {HaApi} */ (this.api), player),
-      mediaUrl: this.mapping.media_url, mic: { name: this.mic.name, tier: this.mic.tier, cal: this.cal },
+      mediaUrl: () => this.ensureNoise(mapping), mic: { name: this.mic.name, tier: this.mic.tier, cal: this.cal },
     });
+  }
+
+  /**
+   * The test noise for a speaker: its own address if it has one, else the one already in
+   * Home Assistant for the other speakers, else uploaded now. The tool's own file is checked
+   * once per session and uploaded again if it has gone from the media folder.
+   * @param {DeviceMapping | null} [m]
+   * @returns {Promise<string>}
+   */
+  async ensureNoise(m = this.mapping) {
+    if (!m) throw new Error('Pick a speaker in setup first.');
+    if (this.demo) return m.media_url ?? 'demo://pink-noise';
+    const api = /** @type {HaApi} */ (this.api);
+    const ours = (/** @type {string | undefined} */ u) => !!u && u.startsWith(`${MEDIA_FOLDER}/`);
+    let url = m.media_url || /** @type {any} */ (this.settings).noiseUrl || '';
+    // an address the user set (a file they host elsewhere): theirs to keep working
+    if (url && !ours(url)) return url;
+    const a = /** @type {any} */ (this);
+    if (url && !a.noiseChecked?.has(url) && !(await noiseInMediaFolder(api, url))) url = '';
+    if (!url) {
+      this.status('Uploading the test noise to Home Assistant');
+      url = await uploadMedia(api, new Blob([encodeWav16(testSignal(), 48000)], { type: 'audio/wav' }), NOISE_FILE);
+      this.notify(`Put the test noise in Home Assistant's media folder (${url.replace('media-source://media_source/local/', 'media/')}). Every speaker uses it.`, 'ok');
+    }
+    (a.noiseChecked ??= new Set()).add(url);
+    if (/** @type {any} */ (this.settings).noiseUrl !== url) /** @type {any} */ (this.settings).noiseUrl = url;
+    if (m.media_url !== url) {
+      const saved = { ...m, media_url: url };
+      this.mappings = this.mappings.map((x) => (x.id === m.id ? saved : x));
+    }
+    this.persist();
+    return url;
   }
 
   // ---------- session ----------
@@ -554,6 +590,7 @@ export class TunerApp {
     if (!keepVolume && session.levelVolume !== null && (await measurer.getVolume()) !== session.levelVolume) await measurer.setVolume(session.levelVolume);
     const rec = await measurer.measure({ ...req, signal, onPrompt: (i, n) => this.promptPosition(i, n, signal), onStatus: (t) => this.status(t) });
     rec.relevelled = !!session.relevelled;
+    /** @type {any} */ (rec).speaker = this.mapping?.id; // which speaker it belongs to
     rec.settings = writer.snapshot(settingRoles(/** @type {any} */ (this.profile)));
     if (rec.clipped) this.notify('The mic clipped during that measurement. Turn the mic gain down and level again.', 'warn');
     return rec;
@@ -863,7 +900,6 @@ export class TunerApp {
     if (!this.api) out.push('Home Assistant');
     if (!(this.mapping && this.writer)) out.push('speaker');
     if (!this.demo && !this.recorder) out.push('microphone');
-    if (!this.demo && !this.mapping?.media_url) out.push('test noise');
     return out;
   }
 
@@ -884,7 +920,7 @@ export class TunerApp {
   /** Which steps are complete, for the step control. */
   stepDone() {
     return {
-      setup: !!(this.api && this.writer && (this.demo || (this.recorder && this.mapping?.media_url))),
+      setup: !!(this.api && this.writer && (this.demo || this.recorder)),
       measure: this.measurements.some((m) => m.kind === 'full' && !m.test),
       tune: !!this.session && this.measurements.some((m) => m.kind === 'full' && m.label.startsWith('After pass') && !m.undone),
       save: false,
@@ -1082,13 +1118,19 @@ export class TunerApp {
     const options = [
       ...this.mappings.map((m) => h('option', { value: m.id, selected: m.id === this.settings.mappingId }, m.name)),
       h('option', { value: '__new', selected: !this.mapping }, this.mappings.length ? 'Set up another speaker…' : 'No speaker yet'),
-    ];
+      this.mappings.length && !this.demo ? h('option', { value: '__manage' }, 'Manage speakers…') : null,
+    ].filter(Boolean);
     const speaker = /** @type {HTMLSelectElement} */ (h('select', { class: 'speaker-switch', 'aria-label': 'Speaker', disabled: !!this.busy,
       onchange: () => {
         const id = speaker.value;
         if (id === '__new') {
           /** @type {any} */ (this).draft = null;
           this.useMapping('').then(() => this.goStep('setup', 'speaker'));
+          return;
+        }
+        if (id === '__manage') {
+          speaker.value = this.settings.mappingId || '__new';
+          this.goStep('setup', 'speakers');
           return;
         }
         this.run('Switching speaker', async () => {
@@ -1257,4 +1299,19 @@ export function helpButton(topic, title) {
 /** Where a card or block shows its messages. @param {string} where */
 export function feedbackBox(where) {
   return h('div', { class: 'feedback', 'data-for': where, 'aria-live': 'polite' }, currentApp?.feedbackNodes(where) ?? []);
+}
+
+/**
+ * Is the tool's test noise still in the media folder? Unknown (no browse permission, older HA)
+ * counts as yes: playing it will tell.
+ * @param {HaApi} api @param {string} url
+ */
+async function noiseInMediaFolder(api, url) {
+  try {
+    const r = await api.transport.send({ type: 'media_source/browse_media', media_content_id: MEDIA_FOLDER });
+    return (r?.children ?? []).some((/** @type {any} */ c) => c.media_content_id === url);
+  } catch (e) {
+    // the folder doesn't exist yet: nothing was ever uploaded
+    return !/not.?found|unknown_path|does not exist/i.test(String(/** @type {any} */ (e)?.message ?? e));
+  }
 }

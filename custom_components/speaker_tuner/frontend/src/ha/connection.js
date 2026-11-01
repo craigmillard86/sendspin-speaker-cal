@@ -174,6 +174,8 @@ export function connectWithToken(baseUrl, token, { WebSocketImpl = globalThis.We
 }
 
 /** Where the test noise goes: /media/speaker-tuner/ on a standard install (HA creates the folder). */
+/** The test noise's file name in MEDIA_FOLDER. */
+export const NOISE_FILE = 'speaker-tuner-pink-20s.wav';
 export const MEDIA_FOLDER = 'media-source://media_source/local/speaker-tuner';
 
 /**

@@ -27,12 +27,6 @@ export function renderReady(app) {
       sub: app.demo ? 'Simulated in demo mode' : app.recorder ? `${app.mic.name} · ${app.mic.tier}` : 'Pick the mic you will measure with',
       action: app.demo ? null : { label: app.recorder ? 'Change' : 'Choose microphone', fn: open('mic') },
     },
-    {
-      ok: app.demo || !!app.mapping?.media_url,
-      title: 'Test noise',
-      sub: app.demo ? 'Simulated in demo mode' : app.mapping?.media_url ? 'Pink noise in Home Assistant media' : 'Put the test noise file in Home Assistant',
-      action: app.demo ? null : { label: app.mapping?.media_url ? 'Play 3 s' : 'Add the test noise', fn: open('speaker') },
-    },
   ];
   const missing = items.filter((i) => !i.ok);
   return card('Ready to measure', missing.length ? `${items.length - missing.length} of ${items.length} ready` : 'All ready', [

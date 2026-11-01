@@ -556,7 +556,7 @@ function copyBlock(app) {
     if (!mine) throw new Error(`Measure ${app.mapping?.name} first, with the mic where it will be for the other speaker.`);
     if (!app.recorder) throw new Error('Open the mic first.');
     await app.confirm('Verify', `Put the mic in the same place relative to ${other.name} as it was for ${app.mapping?.name}.`, 'Measure');
-    const m = new MicMeasurer({ recorder: app.recorder, playback: new Playback(/** @type {any} */ (app.api), other.entities.media_player), mediaUrl: other.media_url, mic: app.mic });
+    const m = new MicMeasurer({ recorder: app.recorder, playback: new Playback(/** @type {any} */ (app.api), other.entities.media_player), mediaUrl: () => app.ensureNoise(other), mic: app.mic });
     const theirVolume = await m.getVolume().catch(() => null);
     if (app.session?.levelVolume) await m.setVolume(app.session.levelVolume);
     let rec;
