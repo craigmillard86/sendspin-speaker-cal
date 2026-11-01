@@ -12,6 +12,25 @@
     "version": { "type": "integer", "minimum": 1 },
     "component": { "type": "string", "description": "tas58xx-crossover, tas58xx-graphic or generic. Only tas58xx-crossover gets the crossover model and fork checks." },
     "notes": { "type": "string" },
+    "based_on": { "type": "string", "description": "The shipped profile this one was built from (Upload ESPHome YAML, Save as recommended)." },
+    "source": { "type": "object", "description": "Where the profile came from, e.g. { kind: 'esphome-yaml', name, friendly_name, project, chip, dac, components, packages }." },
+    "board": {
+      "type": "object",
+      "description": "The board the speaker was recognised as.",
+      "properties": { "name": { "type": "string" }, "confidence": { "enum": ["certain", "likely", "none"] } }
+    },
+    "recommended": {
+      "type": "object",
+      "description": "Recommended settings for this build, offered in Tune as a starting point.",
+      "required": ["values", "source"],
+      "properties": {
+        "values": { "type": "object", "description": "role -> value: numbers, true/false for switches, option labels for selects", "additionalProperties": { "type": ["number", "boolean", "string"] } },
+        "source": { "enum": ["yaml", "tuning"] },
+        "tuned_with": { "type": ["object", "null"], "description": "How the values were tuned: mic, tier, target, positions, rms_after." },
+        "date": { "type": "string" },
+        "notes": { "type": "string" }
+      }
+    },
     "enclosure": { "enum": ["sealed", "ported", "passive_radiator"] },
     "dsp_sample_rate": { "type": "number", "minimum": 8000 },
     "drivers": {

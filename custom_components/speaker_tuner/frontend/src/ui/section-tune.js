@@ -306,6 +306,7 @@ export function renderTune(app) {
 
   return card('Tune', ready ? `Mic tier: ${tier}` : 'Set up a speaker first', [
     isCrossover ? h('p', { class: 'help' }, 'Work down the list; press a step to open it. Each step measures, puts back what it changed for the test, and suggests values; nothing changes until you press Apply. Run them again in any order.') : null,
+    recommendedBlock(app),
     ...steps,
     peqBlock(app, fulls, chartReference),
     /** @type {any} */ (app).headroomWarning ? h('div', { class: 'notice notice-warn' }, /** @type {any} */ (app).headroomWarning,
@@ -662,4 +663,44 @@ function bandTable(app, before, after, wasLabel, nowLabel) {
       const same = r.before.gain === r.after.gain && (!r.after.gain || (r.before.f === r.after.f && r.before.q === r.after.q));
       return h('tr', null, h('td', null, `${r.bank} ${r.band}`), h('td', { class: 'muted' }, cell(r.before)), h('td', null, same ? `${cell(r.after)} (unchanged)` : h('b', null, cell(r.after))));
     }));
+}
+
+/**
+ * The profile's recommended settings (from the speaker's YAML, or saved after a tuning), as a
+ * starting point: what differs from now, and Apply.
+ * @param {App} app
+ */
+function recommendedBlock(app) {
+  const rec = /** @type {any} */ (app.profile)?.recommended;
+  const w = app.writer;
+  if (!rec?.values || !w) return null;
+  const roles = app.roles;
+  const same = (/** @type {any} */ a, /** @type {any} */ b) => (typeof a === 'number' || typeof b === 'number' ? Math.abs(Number(a) - Number(b)) < 1e-6 : String(a) === String(b));
+  /** @type {Record<string, any>} */
+  const diff = {};
+  for (const [role, v] of Object.entries(rec.values)) if (app.has(role) && !same(w.value(role), v)) diff[role] = v;
+  const n = Object.keys(diff).length;
+  if (!n) return null;
+  const t = rec.tuned_with;
+  const how = rec.source === 'yaml'
+    ? 'the starting values in this speaker\'s YAML'
+    : `a tuning${t?.tier ? ` with a ${t.tier} mic` : ''}${t?.target ? `, target "${t.target}"` : ''}${typeof t?.rms_after === 'number' ? `, ${t.rms_after.toFixed(1)} dB from the target` : ''}${rec.date ? ` (${String(rec.date).slice(0, 10)})` : ''}`;
+  const open = /** @type {any} */ (app.ui.tune ?? {}).recOpen;
+  const rows = Object.entries(diff);
+  /** @param {any} v */
+  const show = (v) => (typeof v === 'number' ? String(Math.round(v * 100) / 100) : v === true ? 'on' : v === false ? 'off' : String(v ?? '–'));
+  return h('div', { class: 'step', 'data-where': 'recommended' },
+    h('div', { class: 'step-head' }, h('div', { class: 'step-title' }, h('h4', null, 'Recommended settings'), h('span', { class: 'chip chip-strong' }, `${n} differ`))),
+    h('p', { class: 'help' }, `This speaker's profile has recommended settings from ${how}. Start from them, then measure and refine with the steps below.`),
+    h('table', { class: 'ba' },
+      h('tr', null, h('th', null, 'Setting'), h('th', null, 'Now'), h('th', null, 'Recommended')),
+      (open ? rows : rows.slice(0, 6)).map(([k, v]) => h('tr', null, h('td', null, roles[k]?.label ?? k), h('td', null, show(w.value(k))), h('td', { class: 'ba-new' }, show(v))))),
+    rows.length > 6 ? h('button', { class: 'link', onclick: () => {
+      /** @type {any} */ (app.ui.tune).recOpen = !open;
+      app.refresh('tune');
+    } }, open ? 'Show fewer' : `Show all ${rows.length}`) : null,
+    h('div', { class: 'row' },
+      h('button', { class: 'primary', disabled: !!app.busy, onclick: () => applyValues(app, diff, 'the recommended settings') }, 'Apply recommended settings'),
+      h('span', { class: 'reason' }, 'Revert to session start undoes it.')),
+    feedbackBox('recommended'));
 }

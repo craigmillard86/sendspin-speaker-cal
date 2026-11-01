@@ -7,6 +7,7 @@ import { card } from './app.js';
 import * as store from './store.js';
 import { listEsphomeDevices, deviceEntities, suggestMapping } from '../ha/discover.js';
 import { detectBoard, rankProfiles } from '../ha/detect.js';
+import { profileFromYaml } from '../profiles/esphome-yaml.js';
 import { uploadMedia, MEDIA_FOLDER } from '../ha/connection.js';
 import { Playback } from '../ha/playback.js';
 import { expandRoles, checkProfile } from '../profiles/profile.js';
@@ -92,10 +93,29 @@ export function renderSpeaker(app) {
       const problems = validate(schema, p);
       if (problems.length) throw new Error(`That profile has problems:\n${problems.slice(0, 8).join('\n')}`);
       checkProfile(p);
-      app.profiles[p.id] = p;
-      store.save('profiles', [...store.load('profiles', []).filter((/** @type {any} */ x) => x.id !== p.id), p]);
+      app.saveProfile(p);
       d.profile = p.id;
       app.notify(`Imported profile "${p.name}".`, 'ok');
+      app.refresh('speaker');
+    } catch (e) {
+      app.notify(/** @type {Error} */ (e).message, 'error');
+    }
+  };
+
+  // the speaker's own ESPHome YAML: a profile with exactly its settings, its starting values as
+  // recommendations, and its file as the export
+  const uploadYaml = async () => {
+    const file = await pickTextFile('.yaml,.yml,text/yaml,text/x-yaml');
+    if (!file) return;
+    try {
+      const r = profileFromYaml(file.text, app.profiles);
+      if (app.boards) {
+        const a = r.analysis;
+        const [maker, model] = a.project?.includes('.') ? a.project.split('.') : ['Espressif', a.chip ?? ''];
+        const det = detectBoard({ manufacturer: maker, model }, a.entities.map((e) => ({ name: e.name, object: e.key })), app.boards);
+        if (det.confidence !== 'none') r.profile.board = { name: det.name, confidence: det.confidence };
+      }
+      /** @type {any} */ (d).yaml = { ...r, fileName: file.name };
       app.refresh('speaker');
     } catch (e) {
       app.notify(/** @type {Error} */ (e).message, 'error');
@@ -147,6 +167,7 @@ export function renderSpeaker(app) {
     h('div', { class: 'row' },
       field('Speaker profile', profiles, profile?.notes),
       h('div', { class: 'row tight' },
+        h('button', { onclick: uploadYaml, title: 'Build a profile from the speaker\'s ESPHome YAML' }, 'Upload ESPHome YAML'),
         h('button', { onclick: importProfile }, 'Import profile'),
         profile ? h('button', { onclick: () => download(`${profile.id}.json`, JSON.stringify(profile, null, 2), 'application/json') }, 'Export profile') : null)),
     field('Name', /** @type {HTMLElement} */ (h('input', { value: d.name, placeholder: 'Living room left', oninput: (/** @type {any} */ e) => (d.name = e.target.value) }))),
@@ -154,6 +175,7 @@ export function renderSpeaker(app) {
       h('button', { onclick: discover, disabled: !ready || !!app.busy || app.demo }, 'Discover devices'),
       devices.length ? select([{ value: '', label: 'Pick the ESPHome device…' }, ...devices.map((/** @type {any} */ x) => ({ value: x.id, label: `${x.name}${x.manufacturer && x.manufacturer.toLowerCase() !== 'espressif' ? ` (${x.manufacturer} ${x.model})` : x.model ? ` (${x.model})` : ''}${x.subDevices ? ` · ${x.subDevices} sub-device${x.subDevices === 1 ? '' : 's'}` : ''}` }))], d.device_id ?? '', pickDevice) : null),
     detected(app, d),
+    yamlPanel(app, d),
     !ready ? h('p', { class: 'help' }, 'Connect to Home Assistant first, or try the demo.') : null,
     profile ? roleEditor(app, d, profile) : null,
     h('div', { class: 'row' }, h('button', { class: 'primary', onclick: saveDraft, disabled: !profile || !!app.busy }, 'Save speaker'),
@@ -167,6 +189,45 @@ export function renderSpeaker(app) {
   ];
   const summary = app.mapping ? `${app.mapping.name} · ${app.profile?.name ?? 'unknown profile'}` : 'No speaker set up';
   return card('Speaker', summary, body, !app.mapping);
+}
+
+/**
+ * What an uploaded YAML holds, and the profile it makes, before it is kept.
+ * @param {import('./app.js').TunerApp} app @param {Draft} d
+ */
+function yamlPanel(app, d) {
+  const y = /** @type {any} */ (d).yaml;
+  if (!y) return null;
+  const p = y.profile;
+  const rec = Object.keys(p.recommended?.values ?? {}).length;
+  const replacing = !!app.profiles[p.id];
+  const create = () => {
+    app.saveProfile(p);
+    d.profile = p.id;
+    if (d.candidates) {
+      d.entities = suggestMapping(p, d.candidates);
+      /** @type {any} */ (d).ranking = rankProfiles(app.profiles, d.candidates);
+    }
+    /** @type {any} */ (d).yaml = null;
+    app.notify(`${replacing ? 'Updated' : 'Created'} the profile "${p.name}"${rec ? ` with ${rec} recommended settings` : ''}. Press Save speaker to use it for this speaker.`, 'ok');
+    app.refresh('speaker');
+  };
+  return h('div', { class: 'subpanel' },
+    h('h4', null, `From ${y.fileName}`),
+    h('p', null, h('b', null, y.summary)),
+    p.board ? h('p', { class: 'muted' }, `${p.board.confidence === 'certain' ? 'Board' : 'Looks like'}: ${p.board.name}`) : null,
+    h('ul', { class: 'findings' },
+      h('li', null, `Based on the "${app.profiles[p.based_on]?.name ?? p.based_on}" profile, with the settings this YAML exposes.`),
+      rec ? h('li', null, `${rec} recommended settings from its crossover: block (offered in Tune as a starting point).`) : h('li', null, 'No starting values found (no crossover: block).'),
+      h('li', null, y.fullFile ? 'Save will export this whole file with the tuned values filled in, ready to flash.' : 'Save will export a snippet to paste into your YAML.'),
+      y.redacted.length ? h('li', null, `Passwords and keys were replaced by !secret references (${y.redacted.join(', ')}); they are never stored.`) : null),
+    y.warnings.length ? h('div', { class: 'notice notice-warn' }, y.warnings.map((/** @type {string} */ w) => h('p', null, w))) : null,
+    h('div', { class: 'row' },
+      h('button', { class: 'primary', onclick: create }, replacing ? 'Update profile' : 'Create profile'),
+      h('button', { class: 'link', onclick: () => {
+        /** @type {any} */ (d).yaml = null;
+        app.refresh('speaker');
+      } }, 'Discard')));
 }
 
 /**

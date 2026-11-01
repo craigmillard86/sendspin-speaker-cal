@@ -28,6 +28,8 @@ export function templateValues(profile, values, { deviceName = '', tweeterMinFre
     date: date.toISOString().slice(0, 10),
     dsp_sample_rate: formatNumber(profile.dsp_sample_rate ?? 96000),
     tweeter_min_frequency: formatNumber(tweeterMinFrequency ?? profile.defaults?.tweeter_min_frequency ?? 500),
+    // a literal "{{" in a user's own YAML (kept in full-file templates)
+    _lb: '{{',
   };
   for (const [role, spec] of Object.entries(roles)) {
     const v = values[role] ?? profile.defaults?.[role] ?? spec.default;

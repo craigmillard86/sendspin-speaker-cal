@@ -394,6 +394,12 @@ export class TunerApp {
   }
 
   /** Close the mic, stop following HA and stop any task (the HA panel was removed). */
+  /** Keep a profile the user made or imported (with the integration: in Home Assistant). @param {any} profile */
+  saveProfile(profile) {
+    this.profiles[profile.id] = profile;
+    store.save('profiles', [...store.load('profiles', []).filter((/** @type {any} */ x) => x.id !== profile.id), profile]);
+  }
+
   /** This speaker's Tune results, PEQ report and history, as saved (with Home Assistant: by any browser). */
   restoreTuning() {
     const a = /** @type {any} */ (this);

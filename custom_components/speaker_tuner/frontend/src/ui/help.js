@@ -43,6 +43,7 @@ export const HELP = {
       'The tool says what board it recognises (for example a Sonocotta Louder-ESP32-S3) and picks the profile that fits it best; the profile list shows how many of each profile\'s settings the device has. Change the profile if it picked the wrong one.',
       'Open Entity roles and check the guesses: each role (such as Mid PEQ 3 Gain or Mute tweeter) should point at the matching entity. Leave a role as not used if the speaker does not have it; features that need it hide themselves.',
       'Media player: pick the player that plays files. On Louder boards with Sendspin that is the … Player, not the … Sendspin Player.',
+      'Optional: press Upload ESPHome YAML and pick the speaker\'s YAML file. The tool builds a profile with exactly the settings it exposes, takes its crossover: values as recommended settings, and makes Save export that same file with the tuned values in it. Passwords and keys are replaced by !secret references and never stored.',
       'Give it a name and press Save speaker.',
       'Under Test noise, press Upload to Home Assistant, then Play 3 s to check you hear it.',
     ],
@@ -95,6 +96,7 @@ export const HELP = {
     step: 'Tune',
     intro: 'A sequence of steps that each measure one thing, suggest values, and write them only when you press Apply.',
     todo: [
+      'If the profile has recommended settings (from your YAML, or saved after tuning a speaker of the same build), Recommended settings at the top lists what differs; Apply them first as a starting point.',
       'Work down the list in order: the low end, then how the two drivers join (levels, polarity, crossover, timing), then broad shaping (baffle, air), and the PEQ fit last.',
       'Open a step, read what it needs, press Run. Check the suggestion against Now, then press Apply, or move on without applying.',
       'Use Next step to go on. Steps can be run again in any order.',
@@ -214,9 +216,10 @@ export const HELP = {
       'Download or Copy the YAML and paste its substitutions and crossover block into your device YAML.',
       'Flash the speaker with ESPHome.',
       'Optional: after flashing, press Reset speaker to YAML to check the speaker comes back to the same values.',
+      'Press Save as recommended for this build to keep the tuned values in the profile: the next speaker of the same build is offered them in Tune.',
     ],
     why: 'The values are already saved on the speaker and survive a restart. But a reflash, a reset or a new board starts from the YAML; putting the tuning there makes it the speaker\'s defaults, and keeps it with your configuration.',
-    outcome: 'A YAML file with every setting in ESPHome\'s units, a REW filter file, and a tuning report (HTML) with before and after charts and every changed setting.',
+    outcome: 'A YAML file with every setting in ESPHome\'s units (your whole file, ready to flash, if the profile was built from your YAML), a REW filter file, and a tuning report (HTML) with before and after charts and every changed setting.',
   },
 };
 

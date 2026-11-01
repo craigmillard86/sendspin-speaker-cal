@@ -40,6 +40,7 @@ speaker in a simulated room.
 - [Target curves](#target-curves)
 - [Running the standalone page](#running-the-standalone-page)
 - [Writing a profile for your speaker](#writing-a-profile-for-your-speaker)
+- [Recommended settings](#recommended-settings)
 - [Where your data is kept](#where-your-data-is-kept)
 - [Limits and good to know](#limits-and-good-to-know)
 - [Development](#development)
@@ -156,6 +157,11 @@ run, **Next step** opens the next one.
 5. Give the speaker a name and press **Save speaker**. You can set up several speakers.
    With the integration installed they are saved in Home Assistant (see
    [Where your data is kept](#where-your-data-is-kept)), so every browser sees them.
+   *Optional:* **Upload ESPHome YAML** reads the speaker's own YAML file and builds a profile
+   from it: exactly the settings it exposes, the values in its `crossover:` block as
+   *recommended settings*, and an export that is that same file with the tuned values filled
+   in, ready to flash. Passwords and keys are replaced by `!secret` references before anything
+   is stored. Settings in `packages:` or `!include` files are not followed.
 6. **Test noise:** press **Upload to Home Assistant**. This puts a 20-second pink noise file
    (48 kHz, 16-bit, mono, with 1-second fades) into your media folder at
    `/media/speaker-tuner/` and fills in its address. Press **Play 3 s** to check you hear it.
@@ -406,6 +412,14 @@ describes every field and gives autocomplete in editors such as VS Code. Start f
   reported by name.
 
 Made one that works? Please share it: see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Recommended settings
+
+A profile can carry recommended settings: a starting point for a speaker of that build. They
+come from an uploaded YAML (its `crossover:` values), or from **Save as recommended for this
+build** in Save after tuning one. When a speaker's profile has them, Tune starts with a
+**Recommended settings** step that lists what differs from the speaker now; Apply it, then
+measure and refine with the other steps. Revert to session start undoes it.
 
 ## Where your data is kept
 
