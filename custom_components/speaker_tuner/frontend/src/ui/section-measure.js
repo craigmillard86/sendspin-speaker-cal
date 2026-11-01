@@ -18,9 +18,11 @@ export function renderMeasure(app) {
   const s = app.session;
   const mutes = app.has('tweeter_mute') && app.has('mid_mute');
   // what the user has typed or picked survives the re-render after any task
-  const form = (app.ui.measure ??= { label: '', kind: 'full', positions: app.settings.positions });
+  // default names carry on from the highest number used (deleting one never repeats a name)
+  const nextName = () => `Measurement ${Math.max(0, ...app.measurements.map((m) => Number(/^Measurement (\d+)$/.exec(m.label)?.[1] ?? 0))) + 1}`;
+  const form = (app.ui.measure ??= { label: '', kind: 'full', positions: app.settings.positions, page: 0, tests: false });
   if (!mutes) form.kind = 'full';
-  const label = /** @type {HTMLInputElement} */ (h('input', { value: form.label, placeholder: `Measurement ${app.measurements.length + 1}`, oninput: () => (form.label = label.value) }));
+  const label = /** @type {HTMLInputElement} */ (h('input', { value: form.label, placeholder: nextName(), oninput: () => (form.label = label.value) }));
   const kinds = select([
     { value: 'full', label: 'Whole speaker' },
     ...(mutes ? [{ value: 'tweeter', label: 'Tweeter alone' }, { value: 'mid', label: 'Mid alone' }] : []),
@@ -54,7 +56,7 @@ export function renderMeasure(app) {
     const writer = /** @type {any} */ (app.writer);
     if (prep) await writer.write(prep, { signal });
     try {
-      const rec = await app.measure({ label: form.label.trim() || `Measurement ${app.measurements.length + 1}`, kind, positions: n }, signal);
+      const rec = await app.measure({ label: form.label.trim() || nextName(), kind, positions: n }, signal);
       app.addMeasurement(rec);
       form.label = '';
       app.notify(`"${rec.label}" measured. ${rec.positions > 1 ? `${rec.positions} positions averaged; ` : ''}it's on the chart${kind === 'full' ? ' and ready to tune' : ''}.`, 'ok',
@@ -97,7 +99,27 @@ export function renderMeasure(app) {
     }
   };
 
-  const list = h('ul', { class: 'mlist' }, [...app.measurements].reverse().map((m) => {
+  // the list, newest first, a page at a time; scan tests only when asked for
+  const PAGE = 5;
+  const testCount = app.measurements.filter((m) => m.test).length;
+  const items = [...app.measurements].reverse().filter((m) => form.tests || !m.test);
+  const pages = Math.max(1, Math.ceil(items.length / PAGE));
+  form.page = Math.min(Math.max(0, form.page ?? 0), pages - 1);
+  const first = form.page * PAGE;
+  const go = (/** @type {number} */ page) => () => {
+    form.page = page;
+    app.refresh('measure');
+  };
+  const pager = h('div', { class: 'pager' },
+    pages > 1 ? h('button', { class: 'link', disabled: form.page === 0, onclick: go(form.page - 1), 'aria-label': 'Newer measurements' }, '‹ Newer') : null,
+    h('span', { class: 'muted' }, items.length ? `${first + 1}–${Math.min(first + PAGE, items.length)} of ${items.length}` : ''),
+    pages > 1 ? h('button', { class: 'link', disabled: form.page >= pages - 1, onclick: go(form.page + 1), 'aria-label': 'Older measurements' }, 'Older ›') : null,
+    testCount ? h('button', { class: 'link pager-tests', onclick: () => {
+      form.tests = !form.tests;
+      form.page = 0;
+      app.refresh('measure');
+    } }, form.tests ? 'Hide scan tests' : `Show scan tests (${testCount})`) : null);
+  const list = h('ul', { class: 'mlist' }, items.slice(first, first + PAGE).map((m) => {
     const lowConf = m.mask ? Math.round((m.mask.filter(Boolean).length / m.mask.length) * 100) : 0;
     const flags = [
       m.kind !== 'full' ? { tweeter: 'tweeter alone', mid: 'mid alone', nearfield: 'nearfield' }[m.kind] : '',
@@ -134,7 +156,7 @@ export function renderMeasure(app) {
       h('button', { class: 'primary', onclick: measure, disabled: !!blocked || !!app.busy }, 'Measure'),
       !blocked && !s?.levelVolume ? h('span', { class: 'reason' }, 'Sets the level first.') : fixIt,
       h('button', { onclick: importRew }, 'Import REW response')),
-    app.measurements.length ? list : h('p', { class: 'muted' }, 'No measurements yet.'),
+    app.measurements.length ? [list, pager] : h('p', { class: 'muted' }, 'No measurements yet.'),
     app.measurements.length ? h('div', { class: 'row' },
       h('button', { onclick: () => download('speaker-tuner-measurements.csv', measurementsCsv(app.measurements.filter((m) => app.visible.has(m.id)).length ? app.measurements.filter((m) => app.visible.has(m.id)) : app.measurements), 'text/csv') }, 'CSV of shown'),
       h('button', { onclick: () => download('speaker-tuner-measurements.json', JSON.stringify(app.measurements), 'application/json') }, 'Export all (JSON)'),

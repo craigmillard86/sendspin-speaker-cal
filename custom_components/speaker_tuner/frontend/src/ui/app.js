@@ -431,6 +431,8 @@ export class TunerApp {
     while (used.has(slot) && slot < 64) slot++;
     /** @type {any} */ (rec).slot = slot;
     this.measurements.push(rec);
+    // the Measure list goes back to its first page, where the new one is
+    if (this.ui.measure) this.ui.measure.page = 0;
     if (focus) {
       // the chart shows the new measurement next to the baseline; the rest stay a tap away
       // in the legend. Nearfield curves are on their own scale, so they show alone.
