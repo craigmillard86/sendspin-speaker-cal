@@ -425,16 +425,33 @@ export class TunerApp {
   }
 
   /** @param {import('../measure/record.js').MeasurementRecord} rec */
-  addMeasurement(rec) {
+  addMeasurement(rec, { focus = true } = {}) {
     const used = new Set(this.measurements.map((m) => /** @type {any} */ (m).slot));
     let slot = 0;
     while (used.has(slot) && slot < 64) slot++;
     /** @type {any} */ (rec).slot = slot;
     this.measurements.push(rec);
+    if (focus) {
+      // the chart shows the new measurement next to the baseline; the rest stay a tap away
+      // in the legend. Nearfield curves are on their own scale, so they show alone.
+      this.visible.clear();
+      const base = rec.kind === 'nearfield' ? null : this.baseline();
+      if (base) this.visible.add(base.id);
+    }
     this.visible.add(rec.id);
     this.persist();
     this.refresh('measure');
     this.updateChart();
+  }
+
+  /**
+   * The measurement others are compared with: the first whole-speaker measurement of this
+   * session (else the first one at all), not a test and not an undone pass.
+   */
+  baseline() {
+    const real = this.measurements.filter((m) => m.kind === 'full' && !m.test && !m.undone);
+    const since = this.session?.started ? new Date(this.session.started).getTime() : 0;
+    return real.find((m) => new Date(m.time).getTime() >= since) ?? real[0] ?? null;
   }
 
   // ---------- running tasks ----------
@@ -820,11 +837,28 @@ export class TunerApp {
   /** @param {import('./chart.js').Series[]} series */
   renderLegend(series) {
     const legend = this.el.legend;
-    legend.replaceChildren(...series.map((s) =>
+    const real = this.measurements.filter((m) => !m.test);
+    const tests = this.measurements.filter((m) => m.test);
+    const shownTests = tests.filter((m) => this.visible.has(m.id));
+    // scan tests fold into one chip; the ones shown stay out so they can be hidden in one tap
+    const testsOpen = !!this.legendTestsOpen && tests.length > 0;
+    const fixed = series.filter((s) => s.role === 'target' || s.role === 'predicted').map((s) =>
       h('span', { class: 'legend-item' },
-        h('span', { class: `swatch ${s.role === 'target' ? 'swatch-target' : s.role === 'predicted' ? 'swatch-predicted' : ''}`, style: s.role === 'target' ? '' : `background: var(--series-${((s.slot ?? 0) % 8) + 1})` }),
-        s.label)));
-    if (!series.length) legend.append(h('span', { class: 'muted' }, 'No measurements shown yet.'));
+        h('span', { class: `swatch ${s.role === 'target' ? 'swatch-target' : 'swatch-predicted'}`, style: s.role === 'target' ? '' : `background: var(--series-${((s.slot ?? 0) % 8) + 1})` }),
+        s.label));
+    legend.replaceChildren(
+      ...real.map((m) => this.legendChip(m)),
+      ...(testsOpen ? tests : shownTests).map((m) => this.legendChip(m)),
+      tests.length ? h('button', { class: 'legend-chip legend-more', 'aria-expanded': String(testsOpen), onclick: () => {
+        this.legendTestsOpen = !testsOpen;
+        this.renderLegend(this.shownSeries ?? series);
+      } }, testsOpen ? 'Fewer tests ⌃' : `${tests.length - shownTests.length ? `+${tests.length - shownTests.length} ` : ''}scan test${tests.length === 1 ? '' : 's'} ⌄`) : null,
+      ...fixed,
+      this.measurements.length > 1 ? h('span', { class: 'legend-all' },
+        h('button', { class: 'link', onclick: () => this.setShown((m) => !m.test, true, true) }, 'Show all'),
+        h('button', { class: 'link', onclick: () => this.setShown(() => true, false) }, 'Hide all')) : null);
+    if (!this.measurements.length) legend.append(h('span', { class: 'muted' }, 'No measurements yet.'));
+    else if (!series.length) legend.append(h('span', { class: 'muted' }, 'Tap a measurement to show it.'));
     this.shownSeries = series;
     if (!this.el.table.hidden) this.fillTable(series);
   }
@@ -949,7 +983,6 @@ export class TunerApp {
       }, h('span', { class: 'n' }, /** @type {any} */ (done)[st.id] && st.id !== step ? '✓' : String(i + 1)), h('span', { class: 'lbl' }, st.label));
     }));
     this.el.chartTools.replaceChildren(
-      this.curvePicker(),
       h('button', { class: 'link', onclick: () => this.toggleTable() }, this.el.table.hidden ? 'Table' : 'Hide table'),
       h('button', { class: 'link', onclick: () => {
         this.chartSmall = !this.chartSmall;
@@ -964,53 +997,58 @@ export class TunerApp {
    * @param {string} id @param {boolean} on
    */
   setVisible(id, on) {
-    if (on) this.visible.add(id);
-    else this.visible.delete(id);
+    this.setShown((m) => m.id === id, on);
+  }
+
+  /**
+   * Show or hide every measurement that matches, and keep every tick box on the page in step.
+   * @param {(m: any) => boolean} which @param {boolean} on @param {boolean} [only] hide the rest
+   */
+  setShown(which, on, only = false) {
+    for (const m of this.measurements) {
+      const hit = which(m);
+      if (hit ? on : only) {
+        if (hit) this.visible.add(m.id);
+        else this.visible.delete(m.id);
+      } else if (hit) this.visible.delete(m.id);
+    }
     this.updateChart();
-    for (const box of this.root.querySelectorAll(`input[data-show="${id}"]`)) /** @type {HTMLInputElement} */ (box).checked = on;
+    for (const box of this.root.querySelectorAll('input[data-show]')) {
+      /** @type {HTMLInputElement} */ (box).checked = this.visible.has(/** @type {HTMLElement} */ (box).dataset.show ?? '');
+    }
     this.refresh('measure');
   }
 
-  /** "Curves" on the chart: pick which measurements to show, from any step. */
-  curvePicker() {
-    const shown = this.measurements.filter((m) => this.visible.has(m.id)).length;
-    const keep = this.el.chartTools.querySelector('details.curve-picker');
-    /** @param {any} m */
-    const row = (m) => {
-      const box = /** @type {HTMLInputElement} */ (h('input', { type: 'checkbox', checked: this.visible.has(m.id), 'data-show': m.id, onchange: () => this.setVisible(m.id, box.checked) }));
-      return h('label', { class: 'curve-row' }, box,
-        h('span', { class: 'swatch', style: `background: var(--series-${((m.slot ?? 0) % 8) + 1})` }),
-        h('span', { class: 'curve-label' }, m.label), m.positions > 1 ? h('span', { class: 'muted' }, ` ${m.positions} pos.`) : null);
+  /**
+   * One legend chip per measurement: a tap shows or hides it; Ctrl/⌘-click or a long press
+   * shows only that one.
+   * @param {any} m
+   */
+  legendChip(m) {
+    const on = this.visible.has(m.id);
+    let pressed = /** @type {any} */ (null);
+    let solo = false;
+    const only = () => {
+      solo = true;
+      this.setShown((x) => x.id === m.id, true, true);
     };
-    const real = [...this.measurements].reverse().filter((m) => !m.test);
-    const tests = [...this.measurements].reverse().filter((m) => m.test);
-    /** @param {boolean} on @param {(m: any) => boolean} which */
-    const many = (on, which) => () => {
-      for (const m of this.measurements.filter(which)) {
-        if (on) this.visible.add(m.id);
-        else this.visible.delete(m.id);
-      }
-      this.updateChart();
-      // every tick box on the page follows, wherever it is
-      for (const box of this.root.querySelectorAll('input[data-show]')) {
-        /** @type {HTMLInputElement} */ (box).checked = this.visible.has(/** @type {HTMLElement} */ (box).dataset.show ?? '');
-      }
-      this.refresh('measure');
-    };
-    const all = (/** @type {boolean} */ on) => many(on, (m) => !on || !m.test); // "Show all" is the real measurements
-    const picker = /** @type {HTMLDetailsElement} */ (h('details', { class: 'curve-picker', open: keep instanceof HTMLDetailsElement && keep.open },
-      h('summary', null, `Curves (${shown})`),
-      h('div', { class: 'curve-pop' },
-        this.measurements.length ? null : h('p', { class: 'muted' }, 'No measurements yet.'),
-        real.length ? h('div', { class: 'curve-group' }, real.map(row)) : null,
-        tests.length ? h('details', { class: 'curve-tests' }, h('summary', null, `Scan tests (${tests.length})`), tests.map(row),
-          h('div', { class: 'row tight' },
-            h('button', { class: 'link', onclick: many(true, (m) => !!m.test) }, 'Show all tests'),
-            h('button', { class: 'link', onclick: many(false, (m) => !!m.test) }, 'Hide tests'))) : null,
-        this.measurements.length ? h('div', { class: 'row tight' },
-          h('button', { class: 'link', onclick: all(true) }, 'Show all measurements'),
-          h('button', { class: 'link', onclick: all(false) }, 'Hide all')) : null)));
-    return picker;
+    return h('button', {
+      class: `legend-chip ${on ? '' : 'off'}`, 'aria-pressed': String(on),
+      title: `${on ? 'Hide' : 'Show'} ${m.label}${m.positions > 1 ? ` (${m.positions} positions)` : ''}. Ctrl/⌘-click or hold: show only this one.`,
+      onpointerdown: () => {
+        solo = false;
+        pressed = setTimeout(only, 550);
+      },
+      onpointerup: () => clearTimeout(pressed),
+      onpointerleave: () => clearTimeout(pressed),
+      oncontextmenu: (/** @type {Event} */ e) => e.preventDefault(),
+      onclick: (/** @type {MouseEvent} */ e) => {
+        clearTimeout(pressed);
+        if (solo) return; // the long press already did it
+        if (e.ctrlKey || e.metaKey) only();
+        else this.setVisible(m.id, !on);
+      },
+    }, h('span', { class: 'swatch', style: `background: var(--series-${((m.slot ?? 0) % 8) + 1})` }), h('span', { class: 'chip-label' }, m.label));
   }
 
   /** Re-render one section, or every section of the current step. @param {string} [name] */

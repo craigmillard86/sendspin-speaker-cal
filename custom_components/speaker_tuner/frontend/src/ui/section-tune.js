@@ -35,9 +35,11 @@ function ctxFor(app, signal, { positions = app.settings.checkPositions, showAll 
       // test measurements (settings changed for a comparison) are kept apart from real ones:
       // never offered for the fit, the report or A/B, and only the latest few are saved
       if (test) m.test = true;
-      app.addMeasurement(m);
+      // a step's first measurement goes next to the baseline; the rest of the run joins it
+      app.addMeasurement(m, { focus: shown === 0 });
       // scans make many measurements; only the first few stay on the chart
       if (!showAll && ++shown > 2) app.visible.delete(m.id);
+      else if (showAll) shown++;
     },
     measurer: {
       name: inner.name,

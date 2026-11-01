@@ -128,6 +128,9 @@ speaker there), the four steps **Set up · Measure · Tune · Save**, and the ch
   under the steps until they are fixed.
 - **Messages** (top right) keeps everything that was said this session; **All settings** has
   a control for every speaker setting.
+- The chart's legend is also the switch: tap a measurement to show or hide it, Ctrl/⌘-click
+  or hold one to show only that one. A new measurement is shown next to the baseline (the
+  first of the session); scan tests fold into one chip.
 - **?** next to every section and Tune step opens its help: what to do, why it matters, and
   what you get. **Help** (top right) lists every topic.
 

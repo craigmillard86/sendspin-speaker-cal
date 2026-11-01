@@ -107,9 +107,8 @@ export function renderMeasure(app) {
       m.relevelled ? 're-levelled' : '',
       lowConf > 5 ? `${lowConf}% low confidence` : '',
     ].filter(Boolean);
-    const box = /** @type {HTMLInputElement} */ (h('input', { type: 'checkbox', checked: app.visible.has(m.id), 'data-show': m.id, 'aria-label': `Show ${m.label}`, onchange: () => app.setVisible(m.id, box.checked) }));
+    // showing and hiding is done in the chart's legend; this list is for managing them
     return h('li', null,
-      box,
       h('span', { class: 'swatch', style: `background: var(--series-${((/** @type {any} */ (m).slot ?? 0) % 8) + 1})` }),
       h('span', { class: 'mlabel' }, h('strong', null, m.label), h('span', { class: 'muted' }, ` ${new Date(m.time).toLocaleString()} · ${m.mic} (${m.tier})${flags.length ? ` · ${flags.join(' · ')}` : ''}`)),
       h('span', { class: 'row tight' },

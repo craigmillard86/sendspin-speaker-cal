@@ -80,10 +80,11 @@ export const HELP = {
       'Keep the room quiet while it records.',
     ],
     why: 'One mic position mostly measures the room: reflections make sharp peaks and dips that move when you move. Averaging a few positions keeps what the speaker does and averages out what the room does, so the fit corrects the speaker, not one spot in the room. Pink noise has equal energy per octave, so every part of the range is measured evenly.',
-    outcome: 'A curve on the chart (and in the Curves list), saved in this browser. Hatched areas on the chart are low-confidence (too close to the background noise, or the positions disagreed) and are ignored by the fit.',
+    outcome: 'A curve on the chart, shown next to the baseline (the first measurement of the session), and saved in this browser. Hatched areas on the chart are low-confidence (too close to the background noise, or the positions disagreed) and are ignored by the fit.',
     tips: [
       'Tweeter alone and Mid alone (needs the mute roles) measure one driver with the other muted. Driver levels does this for you.',
       'Every measurement this session uses the same volume, so curves compare directly. Use Set level again only if the mic or its gain changed.',
+      'The legend above the chart is the switch: tap a measurement to show or hide it; Ctrl/⌘-click or hold one to show only that one.',
       'CSV and REW import/export are here for working with other tools.',
     ],
   },
@@ -140,7 +141,7 @@ export const HELP = {
     todo: [
       'Enter the frequencies to try, for example 1800, 2000, 2200, 2500, 2800. The current one is always included.',
       'Tick Also try each filter type to compare LR2, LR4 and the Butterworth types too (takes longer).',
-      'Press Run, compare the curves on the chart (each point stays on it; use Show in the results or Curves to pick), then Apply.',
+      'Press Run, compare the curves on the chart (each point stays on it; tap them in the legend, or use Show in the results, to compare), then Apply.',
     ],
     why: 'Too low, and the tweeter is pushed into its resonance and distorts. Too high, and the mid/bass beams and sounds narrow. The best point joins the drivers smoothly. A change is only suggested if it is clearly flatter than now, not on measurement noise.',
     outcome: 'A table of each point\'s spread over ±1 octave around the crossover and the depth of any dip, and the suggested crossover.',
