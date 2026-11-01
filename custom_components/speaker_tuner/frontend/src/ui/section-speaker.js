@@ -129,7 +129,7 @@ export function renderSpeaker(app) {
     field('Name', /** @type {HTMLElement} */ (h('input', { value: d.name, placeholder: 'Living room left', oninput: (/** @type {any} */ e) => (d.name = e.target.value) }))),
     h('div', { class: 'row' },
       h('button', { onclick: discover, disabled: !ready || !!app.busy || app.demo }, 'Discover devices'),
-      devices.length ? select([{ value: '', label: 'Pick the ESPHome device…' }, ...devices.map((/** @type {any} */ x) => ({ value: x.id, label: `${x.name}${x.model ? ` (${x.model})` : ''}` }))], d.device_id ?? '', pickDevice) : null),
+      devices.length ? select([{ value: '', label: 'Pick the ESPHome device…' }, ...devices.map((/** @type {any} */ x) => ({ value: x.id, label: `${x.name}${x.model ? ` (${x.model})` : ''}${x.subDevices ? ` · ${x.subDevices} sub-device${x.subDevices === 1 ? '' : 's'}` : ''}` }))], d.device_id ?? '', pickDevice) : null),
     !ready ? h('p', { class: 'help' }, 'Connect to Home Assistant first, or try the demo.') : null,
     profile ? roleEditor(app, d, profile) : null,
     h('div', { class: 'row' }, h('button', { class: 'primary', onclick: saveDraft, disabled: !profile || !!app.busy }, 'Save speaker'),

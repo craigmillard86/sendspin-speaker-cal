@@ -7,39 +7,80 @@ import { expandRoles } from '../profiles/profile.js';
 /** @param {string} s */
 export const slug = (s) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
 
+/** @param {any} d */
+const deviceName = (d) => d.name_by_user || d.name || d.id;
+
 /**
- * Devices that have at least one ESPHome entity.
+ * A device and every device below it. ESPHome sub-devices (the `devices:` list in the YAML)
+ * are separate devices in Home Assistant, linked to the speaker by via_device_id.
+ * @param {any[]} devices @param {string} rootId
+ * @returns {Map<string, any>} id -> device, the root included
+ */
+export function deviceTree(devices, rootId) {
+  const byParent = new Map();
+  for (const d of devices) {
+    if (!d.via_device_id) continue;
+    if (!byParent.has(d.via_device_id)) byParent.set(d.via_device_id, []);
+    byParent.get(d.via_device_id).push(d);
+  }
+  /** @type {Map<string, any>} */
+  const out = new Map();
+  const queue = devices.filter((d) => d.id === rootId);
+  while (queue.length) {
+    const d = queue.shift();
+    if (out.has(d.id)) continue; // a loop in the registry must not hang us
+    out.set(d.id, d);
+    queue.push(...(byParent.get(d.id) ?? []));
+  }
+  return out;
+}
+
+/**
+ * ESPHome speakers: devices with ESPHome entities on them or on their sub-devices. A
+ * sub-device is listed under its speaker, not as a speaker of its own.
  * @param {import('./connection.js').HaApi} api
- * @returns {Promise<Array<{ id: string, name: string, model?: string }>>}
+ * @returns {Promise<Array<{ id: string, name: string, model?: string, subDevices: number }>>}
  */
 export async function listEsphomeDevices(api) {
   const [devices, entities] = await Promise.all([api.deviceRegistry(), api.entityRegistry()]);
-  const esphome = new Set(entities.filter((/** @type {any} */ e) => e.platform === 'esphome' && e.device_id).map((/** @type {any} */ e) => e.device_id));
-  return devices
-    .filter((/** @type {any} */ d) => esphome.has(d.id))
-    .map((/** @type {any} */ d) => ({ id: d.id, name: d.name_by_user || d.name || d.id, model: d.model }))
+  const withEsphome = new Set(entities.filter((/** @type {any} */ e) => e.platform === 'esphome' && e.device_id).map((/** @type {any} */ e) => e.device_id));
+  const byId = new Map(devices.map((/** @type {any} */ d) => [d.id, d]));
+  // a device belongs to an ESPHome speaker if it, or any device below it, has ESPHome entities
+  const related = (/** @type {string} */ id) => [...deviceTree(devices, id).keys()].some((x) => withEsphome.has(x));
+  // list only the top of each tree: a sub-device is part of its speaker, not one of its own
+  const tops = devices
+    .filter((/** @type {any} */ d) => related(d.id) && !(d.via_device_id && byId.has(d.via_device_id) && related(d.via_device_id)))
+    .map((/** @type {any} */ d) => d.id);
+  return tops
+    .map((id) => {
+      const d = byId.get(id);
+      return { id, name: deviceName(d), model: d.model, subDevices: deviceTree(devices, id).size - 1 };
+    })
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /**
- * @typedef {{ entity_id: string, domain: string, name: string, object: string, state: any }} DeviceEntity
+ * @typedef {{ entity_id: string, domain: string, name: string, object: string, state: any, device?: string }} DeviceEntity
+ * Entities of a speaker and all its sub-devices. An entity on a sub-device is named with the
+ * sub-device in front ("Tweeter" + "PEQ 1 Gain" -> "Tweeter PEQ 1 Gain"), which is how it
+ * reads in Home Assistant and what the profile's role hints look for.
  * @param {import('./connection.js').HaApi} api @param {string} deviceId
  * @returns {Promise<DeviceEntity[]>}
  */
 export async function deviceEntities(api, deviceId) {
-  const [entities, states] = await Promise.all([api.entityRegistry(), api.getStates()]);
+  const [devices, entities, states] = await Promise.all([api.deviceRegistry(), api.entityRegistry(), api.getStates()]);
+  const tree = deviceTree(devices, deviceId);
   const byId = new Map(states.map((/** @type {any} */ s) => [s.entity_id, s]));
   return entities
-    .filter((/** @type {any} */ e) => e.device_id === deviceId && !e.disabled_by)
+    .filter((/** @type {any} */ e) => tree.has(e.device_id) && !e.disabled_by)
     .map((/** @type {any} */ e) => {
       const state = byId.get(e.entity_id);
-      return {
-        entity_id: e.entity_id,
-        domain: e.entity_id.split('.')[0],
-        name: e.name || e.original_name || state?.attributes?.friendly_name || e.entity_id,
-        object: e.entity_id.split('.')[1],
-        state,
-      };
+      const own = e.name || e.original_name || state?.attributes?.friendly_name || e.entity_id;
+      const sub = e.device_id !== deviceId ? deviceName(tree.get(e.device_id)) : '';
+      // no prefix when the name already says which part it is ("Mid PEQ 1 Gain" on "Mid EQ")
+      const first = (/** @type {string} */ t) => t.trim().split(/\s+/)[0]?.toLowerCase();
+      const name = sub && first(own) !== first(sub) ? `${sub} ${own}` : own;
+      return { entity_id: e.entity_id, domain: e.entity_id.split('.')[0], name, object: e.entity_id.split('.')[1], state, device: sub || undefined };
     });
 }
 
