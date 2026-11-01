@@ -137,7 +137,101 @@ export function planPeqFit({ profile, values, rangeOf, curve, target, mic, boost
     rmsAfter: rmsDeviation(freqs, predicted, tgt, rules.fMin, rules.fMax, fitMask),
     rules,
     boostFloorHz: floor,
+    offsetDb: peqResult?.offsetDb ?? 0,
+    fs,
   };
+}
+
+/** @param {number} f */
+const hz = (f) => (f >= 1000 ? `${Math.round(f / 100) / 10} kHz` : `${Math.round(f)} Hz`);
+
+/**
+ * What the fit found, in words: each correction (bands within a sixth of an octave merged),
+ * described by the peak or dip it takes out, and what it deliberately left alone. A band's
+ * peak or dip is how far the measurement is from the target at its centre once the other
+ * bands have done their part, so overlapping bands are not counted twice.
+ * @param {ReturnType<typeof planPeqFit>} plan
+ * @returns {Array<{ kind: 'peak' | 'dip' | 'shape' | 'null' | 'floor', f: number, db: number, text: string }>}
+ */
+export function peqFindings(plan) {
+  const fs = plan.fs ?? 96000;
+  const near = (/** @type {number} */ f) => {
+    let best = 0;
+    for (let i = 1; i < plan.freqs.length; i++) if (Math.abs(plan.freqs[i] - f) < Math.abs(plan.freqs[best] - f)) best = i;
+    return best;
+  };
+  /** @param {number} f */
+  const rawDev = (f) => {
+    const i = near(f);
+    return plan.rawDb[i] - plan.offsetDb - plan.targetDb[i];
+  };
+  // merge bands that sit together (a broad and a narrow cut at one frequency are one fix)
+  /** @type {Array<Array<any>>} */
+  const groups = [];
+  for (const flt of [...plan.filters].sort((x, y) => x.f - y.f)) {
+    const last = groups[groups.length - 1];
+    if (last && Math.abs(Math.log2(flt.f / last[0].f)) < 1 / 6 && Math.sign(flt.gain) === Math.sign(last[0].gain)) last.push(flt);
+    else groups.push([flt]);
+  }
+  const shapes = (/** @type {any[]} */ fl) => fl.map((x) => ({ type: x.type ?? 'peaking', f: x.f, gain: x.gain, q: x.q }));
+  /** @type {Array<{ kind: 'peak' | 'dip' | 'shape' | 'null' | 'floor', f: number, db: number, text: string }>} */
+  const out = groups.map((g) => {
+    const f = g.reduce((a, x) => a + x.f * Math.abs(x.gain), 0) / g.reduce((a, x) => a + Math.abs(x.gain), 0);
+    const gain = Math.max(...g.map((x) => Math.abs(x.gain))) * Math.sign(g[0].gain);
+    const others = plan.filters.filter((x) => !g.includes(x));
+    const help = others.length ? responseDb(shapes(others), [f], fs)[0] : 0;
+    const dev = rawDev(f) + help; // what is left at f for this group to fix
+    const cut = gain < 0;
+    const amount = g.length > 1 ? `up to ${Math.abs(gain)} dB with ${g.length} bands` : `${Math.abs(gain)} dB`;
+    const q = Math.max(...g.map((x) => x.q));
+    const width = g.length === 1 && q >= 4 ? 'narrow ' : g.length === 1 && q <= 1 ? 'broad ' : '';
+    // a band can be shaping the response with its neighbours rather than taking out a peak or dip of its own
+    if ((cut && dev < 0.5) || (!cut && dev > -0.5)) {
+      return { kind: /** @type {const} */ ('shape'), f, db: dev, text: `${cut ? 'cut' : 'lift'} of ${amount} around ${hz(f)}, shaping the response together with the bands next to it` };
+    }
+    return { kind: /** @type {'peak' | 'dip'} */ (cut ? 'peak' : 'dip'), f, db: dev, text: `${width}${cut ? 'peak' : 'dip'} of ${dev > 0 ? '+' : ''}${dev.toFixed(1)} dB around ${hz(f)}: ${cut ? 'cut' : 'lifted'} ${amount}` };
+  });
+  for (const r of plan.rejected) {
+    out.push({ kind: 'null', f: r.f, db: rawDev(r.f), text: `narrow dip of ${rawDev(r.f).toFixed(1)} dB at ${hz(r.f)}: left alone, most likely the room (moving the speaker or the seat changes it; EQ can't)` });
+  }
+  if (plan.boostFloorHz > plan.rules.fMin) {
+    out.push({ kind: 'floor', f: plan.boostFloorHz, db: 0, text: `nothing boosted below ${hz(plan.boostFloorHz)}, to protect the bass driver` });
+  }
+  return out.sort((x, y) => x.f - y.f);
+}
+
+/**
+ * Band by band, what a bank holds before and after: frequency, gain, Q and type. Only bands
+ * that are on in either are listed; a band going to 0 dB is switched off.
+ * @param {import('../profiles/profile.js').Profile} profile
+ * @param {Record<string, any>} before role values now
+ * @param {Record<string, any>} after role values to write (or written)
+ */
+export function bandChanges(profile, before, after) {
+  const rows = [];
+  for (const bank of activeBanks(profile)) {
+    if (bank.type === 'graphic') {
+      (bank.frequencies ?? []).forEach((f, i) => {
+        const role = `${bank.role_prefix}${i + 1}_gain`;
+        const was = Number(before[role] ?? 0);
+        const now = Number(after[role] ?? was);
+        if (was || now) rows.push({ bank: bank.name ?? bank.id, band: i + 1, before: { f, gain: was, q: bank.q?.[i] ?? 1 }, after: { f, gain: now, q: bank.q?.[i] ?? 1 } });
+      });
+      continue;
+    }
+    for (let n = 1; n <= (bank.bands ?? 0); n++) {
+      const p = `${bank.role_prefix}${n}_`;
+      const get = (/** @type {Record<string, any>} */ v, /** @type {Record<string, any>} */ fallback) => ({
+        f: Number(v[`${p}frequency`] ?? fallback[`${p}frequency`] ?? 1000),
+        gain: Number(v[`${p}gain`] ?? fallback[`${p}gain`] ?? 0),
+        q: Number(v[`${p}q`] ?? fallback[`${p}q`] ?? 1),
+      });
+      const was = get(before, {});
+      const now = get(after, before);
+      if (was.gain || now.gain) rows.push({ bank: bank.name ?? bank.id, band: n, before: was, after: now });
+    }
+  }
+  return rows;
 }
 
 /**

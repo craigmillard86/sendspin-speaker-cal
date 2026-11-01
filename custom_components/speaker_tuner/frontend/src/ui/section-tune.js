@@ -7,7 +7,7 @@ import { card, feedbackBox } from './app.js';
 import {
   levelMatch, polarityTest, crossoverScan, delayScan, lowEnd, notchAndAir, baffleSuggestion, boostFloor,
 } from '../measure/driver-checks.js';
-import { planPeqFit, curveRms, micRules, effectiveBoostFloor } from '../measure/peq.js';
+import { planPeqFit, curveRms, micRules, effectiveBoostFloor, peqFindings, bandChanges } from '../measure/peq.js';
 import { applyAndRefine } from '../measure/refine.js';
 import { settingRoles } from '../profiles/profile.js';
 import { DspWriter } from '../ha/dsp-writer.js';
@@ -312,13 +312,18 @@ function peqBlock(app, fulls, chartReference) {
     if (!base) throw new Error('Measure the whole speaker first.');
     await app.ensureSession();
     const w = /** @type {DspWriter} */ (app.writer);
+    const valuesBefore = { ...app.values() };
+    /** @type {any} */
+    let firstPlan = null;
     let first = true;
     const plan = (/** @type {{ freqs: number[], db: number[] }} */ curve) => {
       // the baseline may be an older measurement: use the settings it was made with; after
       // that each curve was just measured with the values the speaker holds now
       const values = first ? { ...app.values(), ...(base.settings ?? {}) } : app.values();
+      const p = planPeqFit({ profile: /** @type {any} */ (app.profile), values, rangeOf: (r) => w.range(r), curve, target: app.target, mic: app.mic, boostFloorHz: floor });
+      if (first) firstPlan = p;
       first = false;
-      return planPeqFit({ profile: /** @type {any} */ (app.profile), values, rangeOf: (r) => w.range(r), curve, target: app.target, mic: app.mic, boostFloorHz: floor });
+      return p;
     };
     /** @type {any[]} */
     const records = [];
@@ -349,6 +354,7 @@ function peqBlock(app, fulls, chartReference) {
     app.persist();
     app.refresh('measure');
     a.refineResult = result;
+    a.peqSet = { before: valuesBefore, after: { ...app.values() }, plan: firstPlan };
     if (app.session) {
       /** @type {any} */ (app.session).ab = { b: w.snapshot(settingRoles(/** @type {any} */ (app.profile))), now: 'B', trim: 0 };
       app.persist();
@@ -377,15 +383,18 @@ function peqBlock(app, fulls, chartReference) {
       })) : h('span', { class: 'muted' }, 'Measure the whole speaker first.'),
       h('button', { onclick: fit, disabled: !base || !app.writer }, 'Fit')),
     plan ? h('div', { class: 'step-result' },
-      h('p', null, `Predicted RMS deviation: ${plan.rmsBefore.toFixed(2)} → ${plan.rmsAfter.toFixed(2)} dB. Dotted line on the chart.`),
-      plan.filters.length ? h('table', { class: 'small' },
-        h('tr', null, h('th', null, 'Bank'), h('th', null, 'Frequency'), h('th', null, 'Gain'), h('th', null, 'Q')),
-        plan.filters.map((/** @type {any} */ f) => h('tr', null, h('td', null, f.bank), h('td', null, `${f.f} Hz`), h('td', null, db(f.gain)), h('td', null, f.q.toFixed(2))))) : h('p', null, 'No filters needed within the rules.'),
-      plan.rejected.length ? h('p', { class: 'muted' }, `Left alone (narrow nulls, probably the room): ${plan.rejected.map((/** @type {any} */ r) => `${Math.round(r.f)} Hz`).join(', ')}. Moving the speaker or the seat is the fix for those.`) : null,
+      h('p', null, `Predicted deviation from the target: ${plan.rmsBefore.toFixed(2)} → ${plan.rmsAfter.toFixed(2)} dB RMS. Dotted line on the chart.`),
+      findingsList(plan),
+      h('h5', null, 'What it will set'),
+      bandTable(app, app.values(), plan.changes, 'Now', 'New') ?? h('p', { class: 'muted' }, 'No PEQ bands needed within the rules; every band stays off.'),
       h('div', { class: 'row' },
         h('button', { class: 'primary', onclick: applyRefine, disabled: !!app.busy }, 'Apply and measure again'),
         h('span', { class: 'muted' }, 'Up to 3 passes; stops when a pass gains under 0.3 dB.'))) : null,
-    rr ? h('p', { class: 'reason' }, `Last run: ${rr.steps.map((/** @type {any} */ s) => `pass ${s.iteration} ${s.rms !== null ? `${s.rms.toFixed(2)} dB` : 'not measured'}`).join(', ')} (from ${rr.startRms.toFixed(2)} dB).`) : null,
+    rr && !plan ? h('div', { class: 'step-result' },
+      h('p', null, `Last run: deviation ${rr.startRms.toFixed(2)} → ${rr.finalRms.toFixed(2)} dB RMS. ${rr.steps.map((/** @type {any} */ s) => `Pass ${s.iteration}: ${s.rms !== null ? `${s.rms.toFixed(2)} dB` : 'not measured'}${s.undone ? ' (worse, undone)' : ''}`).join('; ')}.`),
+      a.peqSet?.plan ? findingsList(a.peqSet.plan) : null,
+      a.peqSet ? h('h5', null, 'What it set (read back from the speaker)') : null,
+      a.peqSet ? bandTable(app, a.peqSet.before, a.peqSet.after, 'Before', 'Set') ?? h('p', { class: 'muted' }, 'Every PEQ band is off.') : null) : null,
     feedbackBox('peq'));
 }
 
@@ -562,4 +571,33 @@ function showToggle(app, m) {
   const box = /** @type {HTMLInputElement} */ (h('input', { type: 'checkbox', checked: app.visible.has(m.id), 'data-show': m.id, 'aria-label': `Show ${m.label} on the chart`,
     onchange: () => app.setVisible(m.id, box.checked) }));
   return h('label', { class: 'check' }, box, h('span', { class: 'swatch', style: `background: var(--series-${((m.slot ?? 0) % 8) + 1})` }));
+}
+
+/** The problems the fit found, and what it left alone, as a list. @param {any} plan */
+function findingsList(plan) {
+  const found = peqFindings(plan);
+  if (!found.length) return h('p', null, 'Found nothing worth correcting: the measurement is already close to the target within the rules.');
+  const fixes = found.filter((x) => x.kind === 'peak' || x.kind === 'dip' || x.kind === 'shape');
+  const alone = found.filter((x) => x.kind === 'null' || x.kind === 'floor');
+  const cap = (/** @type {string} */ t) => t[0].toUpperCase() + t.slice(1);
+  return h('div', null,
+    h('h5', null, 'What it found'),
+    fixes.length ? h('ul', { class: 'findings' }, fixes.map((x) => h('li', null, cap(x.text)))) : h('p', null, 'No peaks or dips to correct.'),
+    alone.length ? h('ul', { class: 'findings muted' }, alone.map((x) => h('li', null, cap(x.text)))) : null);
+}
+
+/**
+ * Band by band, before and after. Bands that go to 0 dB read "off".
+ * @param {App} app @param {Record<string, any>} before @param {Record<string, any>} after @param {string} wasLabel @param {string} nowLabel
+ */
+function bandTable(app, before, after, wasLabel, nowLabel) {
+  const rows = bandChanges(/** @type {any} */ (app.profile), before, after);
+  if (!rows.length) return null;
+  const cell = (/** @type {{ f: number, gain: number, q: number }} */ b) => (b.gain ? `${Math.round(b.f)} Hz  ${db(b.gain)}  Q ${b.q.toFixed(2)}` : 'off');
+  return h('table', { class: 'small' },
+    h('tr', null, h('th', null, 'Band'), h('th', null, wasLabel), h('th', null, nowLabel)),
+    rows.map((r) => {
+      const same = r.before.gain === r.after.gain && (!r.after.gain || (r.before.f === r.after.f && r.before.q === r.after.q));
+      return h('tr', null, h('td', null, `${r.bank} ${r.band}`), h('td', { class: 'muted' }, cell(r.before)), h('td', null, same ? `${cell(r.after)} (unchanged)` : h('b', null, cell(r.after))));
+    }));
 }

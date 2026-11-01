@@ -330,3 +330,8 @@ table.ba td.ba-new { font-weight: 800; }
   .act-spin::after, .act-progress, .result, .toast, .modal-box { animation: none; }
   .page button, .meter-fill, .act-track i { transition: none; }
 }
+
+/* PEQ fit: what it found and set */
+.step-result h5 { margin: 14px 0 6px; font-size: 0.82rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--fg-2); }
+.findings { margin: 0 0 6px; padding-left: 18px; font-size: 0.88rem; line-height: 1.5; }
+.findings.muted { color: var(--fg-2); }
